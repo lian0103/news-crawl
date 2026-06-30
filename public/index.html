@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>新北市選舉輿情分析系統 - 儀表板</title>
+  <link rel="stylesheet" href="style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;800&family=Noto+Sans+TC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="bg-glow"></div>
+  
+  <div class="container">
+    <!-- Header -->
+    <header class="header glass">
+      <div class="brand">
+        <div class="logo">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M19 3H5C3.9 3 3 3.9 3 5V19C3 20.1 3.9 21 5 21H19C20.1 21 21 20.1 21 19V5C21 3.9 20.1 3 19 3ZM9 17H7V10H9V17ZM13 17H11V7H13V17ZM17 17H15V13H17V17Z" fill="currentColor"/>
+          </svg>
+        </div>
+        <div>
+          <h1>新北市選舉輿情分析</h1>
+          <p>每日即時新聞爬網、AI 摘要與情感分析系統</p>
+        </div>
+      </div>
+      
+      <div class="controls">
+        <div class="date-select-wrapper">
+          <label for="date-select">選擇日期</label>
+          <input type="date" id="date-select" class="glass-input">
+        </div>
+        <button id="btn-crawl" class="btn btn-secondary">
+          <span class="btn-icon">🔄</span> 手動更新數據
+        </button>
+        <button id="btn-download" class="btn btn-primary">
+          <span class="btn-icon">📥</span> 下載 PDF 報告
+        </button>
+      </div>
+    </header>
+
+    <!-- Progress / Loading Screen -->
+    <div id="loading-overlay" class="overlay hidden">
+      <div class="loader-card glass">
+        <div class="spinner"></div>
+        <h3>正在爬取最新輿情並進行 AI 分析...</h3>
+        <p>這需要大約 20 到 40 秒，請稍候。</p>
+        <div class="progress-bar-wrapper">
+          <div class="progress-bar-fill"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stats Grid -->
+    <section class="stats-grid">
+      <!-- Summary Card -->
+      <div class="card glass stat-card">
+        <h2>今日輿情指標</h2>
+        <div class="stat-main">
+          <div class="stat-number" id="stat-total">0</div>
+          <div class="stat-label">今日總聲量 (篇)</div>
+        </div>
+        <div class="stat-details">
+          <div class="source-bar-wrapper">
+            <span class="source-label">報社分佈</span>
+            <div class="source-bar-progress">
+              <div class="progress-segment p-udn" style="width: 0%" title="聯合報"></div>
+              <div class="progress-segment p-ltn" style="width: 0%" title="自由時報"></div>
+              <div class="progress-segment p-chinatimes" style="width: 0%" title="中國時報"></div>
+            </div>
+            <div class="source-legend">
+              <span class="legend-item"><span class="dot udn"></span> 聯合報: <strong id="lbl-udn">0</strong></span>
+              <span class="legend-item"><span class="dot ltn"></span> 自由時報: <strong id="lbl-ltn">0</strong></span>
+              <span class="legend-item"><span class="dot chinatimes"></span> 中時: <strong id="lbl-chinatimes">0</strong></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sentiment Card -->
+      <div class="card glass stat-card">
+        <h2>情感傾向分析</h2>
+        <div class="sentiment-bars">
+          <div class="sentiment-bar-item">
+            <div class="sentiment-header">
+              <span>正面 (Positive)</span>
+              <span id="lbl-pos-count">0 篇 (0%)</span>
+            </div>
+            <div class="bar-bg"><div class="bar-fill pos" id="bar-pos" style="width: 0%"></div></div>
+          </div>
+          
+          <div class="sentiment-bar-item">
+            <div class="sentiment-header">
+              <span>中立 (Neutral)</span>
+              <span id="lbl-neu-count">0 篇 (0%)</span>
+            </div>
+            <div class="bar-bg"><div class="bar-fill neu" id="bar-neu" style="width: 0%"></div></div>
+          </div>
+          
+          <div class="sentiment-bar-item">
+            <div class="sentiment-header">
+              <span>負面 (Negative)</span>
+              <span id="lbl-neg-count">0 篇 (0%)</span>
+            </div>
+            <div class="bar-bg"><div class="bar-fill neg" id="bar-neg" style="width: 0%"></div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- AI Daily Overview -->
+    <section class="overview-section card glass">
+      <div class="overview-header">
+        <h2>✨ 今日輿情大局觀 (AI 綜合分析)</h2>
+        <button id="btn-email" class="btn btn-sm btn-outline">
+          📧 寄送 PDF 摘要至信箱
+        </button>
+      </div>
+      <div id="ai-overview-content" class="markdown-body">
+        正在載入今日輿情分析報告...
+      </div>
+    </section>
+
+    <!-- News List Section -->
+    <main class="news-section">
+      <div class="filter-bar glass">
+        <h2>輿情焦點新聞列表</h2>
+        
+        <div class="filter-controls">
+          <div class="search-box">
+            <input type="text" id="search-input" placeholder="搜尋標題、內容或關鍵詞...">
+          </div>
+          
+          <div class="select-box">
+            <select id="filter-source" class="glass-select">
+              <option value="all">所有來源</option>
+              <option value="聯合報">聯合報</option>
+              <option value="自由時報">自由時報</option>
+              <option value="中國時報">中國時報</option>
+            </select>
+          </div>
+
+          <div class="select-box">
+            <select id="filter-sentiment" class="glass-select">
+              <option value="all">所有傾向</option>
+              <option value="Positive">正面</option>
+              <option value="Neutral">中立</option>
+              <option value="Negative">負面</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div id="news-container" class="news-grid">
+        <!-- Dynamic News Cards -->
+      </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <p>© 2026 新北市選舉輿情分析系統. All rights reserved.</p>
+      <p>資料每日自動抓取自聯合報、自由電子報、中國時報電子報，AI 分析結果僅供內部團隊評估選情使用。</p>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
