@@ -8,16 +8,37 @@ const { summarizeArticle, generateDailySummary } = require('./ai');
  * @param {string} keyword Defaults to '新北市選舉'
  * @returns {Promise<Object>} Summary statistics of the run
  */
-async function runCrawler(keyword = '新北市選舉') {
-  console.log(`[Crawler Run] Starting crawler run at ${new Date().toISOString()}`);
+async function runCrawler(keywordsInput) {
+  let keywords = ['新北市選舉', '柯文哲', '台灣民眾黨', '新北市議員選舉'];
+  if (Array.isArray(keywordsInput)) {
+    keywords = keywordsInput;
+  } else if (typeof keywordsInput === 'string' && keywordsInput.trim() !== '') {
+    keywords = [keywordsInput];
+  }
+
+  console.log(`[Crawler Run] Starting crawler run at ${new Date().toISOString()} with keywords: ${keywords.join(', ')}`);
   
   try {
     // 1. Initialize database
     await initDatabase();
     
-    // 2. Fetch search results (only list meta data: title, url, date, source)
-    const rawArticles = await scrapeAll(keyword);
-    console.log(`[Crawler Run] Scraped ${rawArticles.length} raw article links`);
+    // 2. Fetch search results for all keywords and deduplicate by URL
+    let rawArticlesMap = new Map();
+    for (const kw of keywords) {
+      console.log(`[Crawler Run] Scraping for keyword: "${kw}"`);
+      try {
+        const results = await scrapeAll(kw);
+        console.log(`[Crawler Run] Keyword "${kw}" returned ${results.length} articles`);
+        for (const art of results) {
+          rawArticlesMap.set(art.url, art);
+        }
+      } catch (err) {
+        console.error(`[Crawler Run] Scraping failed for keyword "${kw}":`, err.message);
+      }
+    }
+    
+    const rawArticles = Array.from(rawArticlesMap.values());
+    console.log(`[Crawler Run] Total unique scraped articles from all keywords: ${rawArticles.length}`);
 
     let newCount = 0;
     let skippedCount = 0;

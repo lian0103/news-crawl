@@ -1,7 +1,7 @@
 const axios = require('axios');
 
 const API_KEY = process.env.GEMINI_API_KEY;
-const MODEL_NAME = 'gemini-1.5-flash';
+const MODEL_NAME = 'gemini-2.0-flash';
 
 /**
  * Call Gemini API to generate content.
@@ -73,14 +73,14 @@ async function summarizeArticle(title, content) {
   }
 
   const prompt = `
-你是一位資深的台灣政治輿情分析師。請分析以下關於「新北市選舉」的新聞：
+你是一位資深的台灣政治輿情分析師。請分析以下關於「新北市選舉與政治動態（包含市長與議員選舉、柯文哲與台灣民眾黨等主題）」的新聞：
 標題：${title}
 內文：${content}
 
 請提供以下分析，並「只」回傳一個 JSON 物件，格式如下：
 {
   "summary": "100到150字以內的繁體中文精簡摘要，描述新聞核心事件。",
-  "sentiment": "針對此新聞對選舉局勢或主要參選人（如李四川、蘇巧慧、劉和然等）的情感傾向，只填寫 'Positive' (正面)、'Neutral' (中立) 或 'Negative' (負面)。",
+  "sentiment": "針對此新聞對選舉局勢、主要政治人物（如李四川、蘇巧慧、劉和然、柯文哲等）或政黨（如國民黨、民進黨、民眾黨）的情感傾向，只填寫 'Positive' (正面)、'Neutral' (中立) 或 'Negative' (負面)。",
   "keywords": ["關鍵詞1", "關鍵詞2", "關鍵詞3"]
 }
   `;
@@ -126,12 +126,12 @@ async function generateDailySummary(date, articles) {
   }).join('\n');
 
   const prompt = `
-你是一位資深的台灣政治輿情分析專家。以下是 ${date} 當天蒐集到關於「新北市選舉」的新聞摘要列表：
+你是一位資深的台灣政治輿情分析專家。以下是 ${date} 當天蒐集到關於「新北市選舉與相關政治輿情（涵蓋市長與議員選舉、柯文哲、台灣民眾黨等主題）」的新聞摘要列表：
 ${articlesText}
 
 請撰寫一份「每日輿情綜合報告」，包含以下部分：
 1. **今日輿情大局觀**：用 2-3 句話總結今天的整體選情聲量與核心焦點。
-2. **主要參選人/政黨動態與聲量**：分析今天各個參選人（如李四川、蘇巧慧、劉和然等）或藍綠白陣營的曝光度與情感倾向分析（正面/負面事件）。
+2. **主要參選人/政黨動態與聲量**：分析今天各個主要政治人物（如李四川、蘇巧慧、劉和然、柯文哲等）或藍綠白陣營（包含國民黨、民進黨、台灣民眾黨及議員參選人）的曝光度與情感傾向分析（正面/負面事件）。
 3. **焦點議題解析**：分析今天引起討論的核心議題（如市政攻防、交通通車、藍白整合等）。
 4. **未來觀察點**：從今日的輿情中，推測未來幾天可能發酵的議題或選情走勢。
 
@@ -158,6 +158,9 @@ function ruleBasedSummarize(title, content) {
   if (content.includes('蘇巧慧')) keywordsList.push('蘇巧慧');
   if (content.includes('李四川')) keywordsList.push('李四川');
   if (content.includes('劉和然')) keywordsList.push('劉和然');
+  if (content.includes('柯文哲')) keywordsList.push('柯文哲');
+  if (content.includes('民眾黨') || content.includes('台灣民眾黨')) keywordsList.push('台灣民眾黨');
+  if (content.includes('議員') || content.includes('市議員')) keywordsList.push('新北市議員選舉');
   if (content.includes('藍白')) keywordsList.push('藍白合');
   if (content.includes('通車')) keywordsList.push('三鶯線');
   if (keywordsList.length === 0) keywordsList.push('新北市選舉');

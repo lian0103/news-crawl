@@ -1,6 +1,9 @@
 document.addEventListener('DOMContentLoaded', () => {
   // DOM Elements
   const dateInput = document.getElementById('date-select');
+  const btnPrevDate = document.getElementById('btn-prev-date');
+  const btnNextDate = document.getElementById('btn-next-date');
+  const btnToday = document.getElementById('btn-today');
   const btnCrawl = document.getElementById('btn-crawl');
   const btnDownload = document.getElementById('btn-download');
   const btnEmail = document.getElementById('btn-email');
@@ -44,9 +47,54 @@ document.addEventListener('DOMContentLoaded', () => {
   // Initial Load
   loadDashboardData(todayStr);
 
+  // Helper to shift date safely without timezone issues
+  function shiftDate(dateStr, days) {
+    const parts = dateStr.split('-');
+    const dateObj = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+    dateObj.setDate(dateObj.getDate() + days);
+    
+    const year = dateObj.getFullYear();
+    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const day = String(dateObj.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  // Helper to update disabled state of navigation buttons
+  function updateDateButtonsState(selectedDate) {
+    const today = getTaipeiTodayString();
+    if (selectedDate >= today) {
+      btnNextDate.disabled = true;
+      btnToday.disabled = true;
+    } else {
+      btnNextDate.disabled = false;
+      btnToday.disabled = false;
+    }
+  }
+
   // Event Listeners
   dateInput.addEventListener('change', (e) => {
     loadDashboardData(e.target.value);
+  });
+
+  btnPrevDate.addEventListener('click', () => {
+    const newDate = shiftDate(dateInput.value, -1);
+    dateInput.value = newDate;
+    loadDashboardData(newDate);
+  });
+
+  btnNextDate.addEventListener('click', () => {
+    const newDate = shiftDate(dateInput.value, 1);
+    const today = getTaipeiTodayString();
+    if (newDate <= today) {
+      dateInput.value = newDate;
+      loadDashboardData(newDate);
+    }
+  });
+
+  btnToday.addEventListener('click', () => {
+    const today = getTaipeiTodayString();
+    dateInput.value = today;
+    loadDashboardData(today);
   });
 
   searchInput.addEventListener('input', renderNewsList);
@@ -105,6 +153,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Load All Data for a Date
   async function loadDashboardData(date) {
     console.log('Loading data for:', date);
+    
+    // Update navigation buttons state
+    updateDateButtonsState(date);
     
     // Reset Views
     aiOverviewContent.innerHTML = '<div class="spinner" style="width: 25px; height: 25px;"></div> 正在讀取 AI 輿情摘要...';

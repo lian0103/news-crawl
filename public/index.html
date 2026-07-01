@@ -28,7 +28,12 @@
       <div class="controls">
         <div class="date-select-wrapper">
           <label for="date-select">選擇日期</label>
-          <input type="date" id="date-select" class="glass-input">
+          <div class="date-picker-nav-group">
+            <button id="btn-prev-date" class="btn-date-nav" title="前一天">◀</button>
+            <input type="date" id="date-select" class="glass-input">
+            <button id="btn-next-date" class="btn-date-nav" title="後一天">▶</button>
+            <button id="btn-today" class="btn-date-today" title="回到今天">今天</button>
+          </div>
         </div>
         <button id="btn-crawl" class="btn btn-secondary">
           <span class="btn-icon">🔄</span> 手動更新數據
