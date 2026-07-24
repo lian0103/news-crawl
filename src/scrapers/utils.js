@@ -92,3 +92,26 @@ module.exports = {
   sleep,
   cleanText
 };
+
+// Concurrency helper: run iterator over items with a fixed number of concurrent workers
+async function mapConcurrent(items, limit, iterator) {
+  if (!Array.isArray(items) || items.length === 0) return;
+  const workerCount = Math.max(1, Math.min(limit || 4, items.length));
+  let idx = 0;
+  const workers = new Array(workerCount).fill(null).map(async () => {
+    while (true) {
+      const current = idx++;
+      if (current >= items.length) return;
+      try {
+        await iterator(items[current], current);
+      } catch (err) {
+        // swallow individual errors to allow other workers to continue
+        console.error('[mapConcurrent] iterator error:', err && err.message ? err.message : err);
+      }
+    }
+  });
+  await Promise.all(workers);
+}
+
+// expose helper
+module.exports.mapConcurrent = mapConcurrent;

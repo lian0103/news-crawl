@@ -25,6 +25,13 @@ async function runCrawler(keywordsInput) {
   }
 
   console.log(`[Crawler Run] Starting crawler run at ${new Date().toISOString()} with keywords: ${keywords.join(', ')}`);
+  // default scraping options to control volume and recency
+  const scrapeOptions = {
+    maxArticles: process.env.SCRAPE_MAX_ARTICLES ? parseInt(process.env.SCRAPE_MAX_ARTICLES) : 8,
+    recentDays: process.env.SCRAPE_RECENT_DAYS ? parseInt(process.env.SCRAPE_RECENT_DAYS) : 3,
+    delayMs: process.env.SCRAPE_DELAY_MS ? parseInt(process.env.SCRAPE_DELAY_MS) : 500,
+    concurrency: process.env.SCRAPE_CONCURRENCY ? parseInt(process.env.SCRAPE_CONCURRENCY) : 4
+  };
   
   try {
     // 1. Initialize database
@@ -35,7 +42,7 @@ async function runCrawler(keywordsInput) {
     for (const kw of keywords) {
       console.log(`[Crawler Run] Scraping for keyword: "${kw}"`);
       try {
-        const results = await scrapeAll(kw);
+        const results = await scrapeAll(kw, scrapeOptions);
         console.log(`[Crawler Run] Keyword "${kw}" returned ${results.length} articles`);
         for (const art of results) {
           rawArticlesMap.set(art.url, art);

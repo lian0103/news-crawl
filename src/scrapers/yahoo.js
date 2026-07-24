@@ -34,7 +34,7 @@ function toDateOnly(value) {
   return '';
 }
 
-async function scrapeYahoo(keyword) {
+async function scrapeYahoo(keyword, options = {}) {
   console.log(`[Yahoo] Scraping keyword: ${keyword}`);
   const encodedKeyword = encodeURIComponent(keyword);
   const searchUrl = `${YAHOO_NEWS_HOST}/search?p=${encodedKeyword}`;
@@ -65,11 +65,25 @@ async function scrapeYahoo(keyword) {
       }
     });
 
-    const articles = Array.from(articleMap.values()).slice(0, 25);
-    console.log(`[Yahoo] Found ${articles.length} search results`);
+    const allArticles = Array.from(articleMap.values());
 
-    for (let i = 0; i < articles.length; i++) {
-      const art = articles[i];
+    // Apply options: limit count and recentDays filter
+    const max = options.maxArticles || 8;
+    const recentDays = typeof options.recentDays === 'number' ? options.recentDays : 3;
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - recentDays);
+
+    let filtered = allArticles.filter(a => {
+      if (!a.publish_date) return true;
+      const pd = new Date(a.publish_date);
+      return pd >= cutoff;
+    });
+    const articles = filtered.slice(0, max);
+    console.log(`[Yahoo] Found ${articles.length} search results (after filtering)`);
+
+    const concurrency = options.concurrency || 4;
+    const { mapConcurrent } = require('./utils');
+    await mapConcurrent(articles, concurrency, async (art, i) => {
       console.log(`[Yahoo] Fetching content for article ${i + 1}/${articles.length}: ${art.title}`);
 
       try {
@@ -100,12 +114,12 @@ async function scrapeYahoo(keyword) {
         art.source = publisherText;
         art.content = contentText.trim();
 
-        await sleep(900);
+        if (options.delayMs) await sleep(options.delayMs);
       } catch (err) {
         console.error(`[Yahoo] Failed to fetch article content from ${art.url}:`, err.message);
         art.content = '';
       }
-    }
+    });
 
     return articles.filter((a) => a.content);
   } catch (err) {

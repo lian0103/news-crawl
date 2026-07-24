@@ -36,12 +36,23 @@
           </div>
           <div id="week-range-label" class="week-range-label">--</div>
         </div>
+        <div class="date-range-wrapper">
+          <label>下載 / 匯出區間</label>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <input type="date" id="range-start" class="glass-input" style="width:140px;"> 
+            <span style="color:var(--text-muted); font-size:13px;">至</span>
+            <input type="date" id="range-end" class="glass-input" style="width:140px;"> 
+          </div>
+        </div>
         <button id="btn-crawl" class="btn btn-secondary">
           <span class="btn-icon">🔄</span> 手動更新數據
         </button>
         <button id="btn-download" class="btn btn-primary">
           <span class="btn-icon">📥</span> 下載 PDF 報告
         </button>
+
+        <!-- Toast for notifications -->
+        <div id="toast" class="toast hidden"></div>
       </div>
     </header>
 

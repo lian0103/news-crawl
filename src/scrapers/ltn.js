@@ -6,7 +6,7 @@ const { fetchHtml, cleanText, sleep } = require('./utils');
  * @param {string} keyword 
  * @returns {Promise<Array>} List of articles
  */
-async function scrapeLTN(keyword) {
+async function scrapeLTN(keyword, options = {}) {
   console.log(`[LTN] Scraping keyword: ${keyword}`);
   const encodedKeyword = encodeURIComponent(keyword);
   const searchUrl = `https://search.ltn.com.tw/list?keyword=${encodedKeyword}`;
@@ -44,10 +44,24 @@ async function scrapeLTN(keyword) {
 
     console.log(`[LTN] Found ${articles.length} search results`);
 
-    // Fetch content for each article
-    for (let i = 0; i < articles.length; i++) {
-      const art = articles[i];
-      console.log(`[LTN] Fetching content for article ${i + 1}/${articles.length}: ${art.title}`);
+    // Apply options: limit count and recentDays filter
+    const max = options.maxArticles || 8;
+    const recentDays = typeof options.recentDays === 'number' ? options.recentDays : 3;
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - recentDays);
+
+    let filtered = articles.filter(a => {
+      if (!a.publish_date) return true;
+      const pd = new Date(a.publish_date);
+      return pd >= cutoff;
+    });
+    filtered = filtered.slice(0, max);
+
+    // Fetch content for each article using concurrency
+    const concurrency = options.concurrency || 4;
+    const { mapConcurrent } = require('./utils');
+    await mapConcurrent(filtered, concurrency, async (art, i) => {
+      console.log(`[LTN] Fetching content for article ${i + 1}/${filtered.length}: ${art.title}`);
       try {
         const artHtml = await fetchHtml(art.url);
         const $art = cheerio.load(artHtml);
@@ -62,18 +76,18 @@ async function scrapeLTN(keyword) {
         });
 
         art.content = contentText.trim();
-        await sleep(1000); // 1s delay
+        if (options.delayMs) await sleep(options.delayMs);
       } catch (err) {
         console.error(`[LTN] Failed to fetch article content from ${art.url}:`, err.message);
         art.content = '';
       }
-    }
+    });
 
   } catch (err) {
     console.error('[LTN] Scrape failed:', err.message);
   }
 
-  return articles.filter(a => a.content);
+  return (filtered || []).filter(a => a.content);
 }
 
 module.exports = scrapeLTN;

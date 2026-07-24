@@ -4,7 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const { dbOps, initDatabase } = require('./db');
 const runCrawler = require('./crawl');
-const { generatePDFReport } = require('./pdf');
+const { generatePDFReport, generatePDFReportRange } = require('./pdf');
 const { sendDailyEmail } = require('./mailer');
 const startScheduler = require('./scheduler');
 
@@ -47,6 +47,23 @@ app.get('/api/recent-summaries', async (req, res) => {
   }
 });
 
+// API: Get articles in a date range (inclusive)
+app.get('/api/news-range', async (req, res) => {
+  const start = req.query.start;
+  const end = req.query.end;
+
+  if (!start || !end) {
+    return res.status(400).json({ success: false, error: '請提供 start 與 end 參數，格式 YYYY-MM-DD' });
+  }
+
+  try {
+    const articles = await dbOps.getArticlesRange(start, end);
+    res.json({ success: true, start, end, count: articles.length, articles });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // API: Manually trigger crawler
 app.post('/api/crawl', async (req, res) => {
   console.log('[Server] Manual crawl triggered via API');
@@ -60,14 +77,23 @@ app.post('/api/crawl', async (req, res) => {
 
 // API: Download PDF report
 app.get('/api/download-pdf', async (req, res) => {
-  const date = req.query.date || new Date().toISOString().substring(0, 10);
+  const start = req.query.start;
+  const end = req.query.end;
+
   try {
-    const pdfPath = await generatePDFReport(date);
-    res.download(pdfPath, `新北市選舉輿情報告_${date}.pdf`, (err) => {
-      if (err) {
-        console.error('[Server] PDF download error:', err.message);
-      }
-    });
+    if (start && end) {
+      const pdfPath = await generatePDFReportRange(start, end);
+      const filename = `新北市選舉輿情報告_${start}_to_${end}.pdf`;
+      res.download(pdfPath, filename, (err) => {
+        if (err) console.error('[Server] PDF download error:', err.message);
+      });
+    } else {
+      const date = req.query.date || new Date().toISOString().substring(0, 10);
+      const pdfPath = await generatePDFReport(date);
+      res.download(pdfPath, `新北市選舉輿情報告_${date}.pdf`, (err) => {
+        if (err) console.error('[Server] PDF download error:', err.message);
+      });
+    }
   } catch (err) {
     console.error('[Server] PDF download generation failed:', err.message);
     res.status(500).json({ success: false, error: err.message });

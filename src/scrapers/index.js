@@ -8,13 +8,13 @@ const scrapeYahoo = require('./yahoo');
  * @param {string} keyword 
  * @returns {Promise<Array>} List of merged articles
  */
-async function scrapeAll(keyword) {
+async function scrapeAll(keyword, options = {}) {
   console.log(`[Scraper Engine] Starting crawl for keyword: "${keyword}"`);
-  
+  options = Object.assign({ maxArticles: 8, recentDays: 3, delayMs: 500 }, options);
   const results = [];
   
   try {
-    const udnArticles = await scrapeUDN(keyword);
+    const udnArticles = await scrapeUDN(keyword, options);
     results.push(...udnArticles);
     console.log(`[Scraper Engine] UDN scraped: ${udnArticles.length} articles`);
   } catch (err) {
@@ -22,7 +22,7 @@ async function scrapeAll(keyword) {
   }
 
   try {
-    const ltnArticles = await scrapeLTN(keyword);
+    const ltnArticles = await scrapeLTN(keyword, options);
     results.push(...ltnArticles);
     console.log(`[Scraper Engine] LTN scraped: ${ltnArticles.length} articles`);
   } catch (err) {
@@ -30,7 +30,7 @@ async function scrapeAll(keyword) {
   }
 
   try {
-    const chinatimesArticles = await scrapeChinatimes(keyword);
+    const chinatimesArticles = await scrapeChinatimes(keyword, options);
     results.push(...chinatimesArticles);
     console.log(`[Scraper Engine] China Times scraped: ${chinatimesArticles.length} articles`);
   } catch (err) {
@@ -38,7 +38,7 @@ async function scrapeAll(keyword) {
   }
 
   try {
-    const yahooArticles = await scrapeYahoo(keyword);
+    const yahooArticles = await scrapeYahoo(keyword, options);
     results.push(...yahooArticles);
     console.log(`[Scraper Engine] Yahoo scraped: ${yahooArticles.length} articles`);
   } catch (err) {

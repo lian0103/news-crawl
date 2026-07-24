@@ -7,7 +7,7 @@ const { fetchHtml, cleanText, sleep } = require('./utils');
  * @param {string} keyword 
  * @returns {Promise<Array>} List of articles
  */
-async function scrapeUDN(keyword) {
+async function scrapeUDN(keyword, options = {}) {
   console.log(`[UDN] Scraping keyword: ${keyword}`);
   const encodedKeyword = encodeURIComponent(keyword);
   // We can fetch page 1
@@ -54,14 +54,28 @@ async function scrapeUDN(keyword) {
       });
     }
 
-    // Now, fetch content for each article
-    for (let i = 0; i < articles.length; i++) {
-      const art = articles[i];
-      console.log(`[UDN] Fetching content for article ${i + 1}/${articles.length}: ${art.title}`);
+    // Apply options: limit count and recentDays filter
+    const max = options.maxArticles || 8;
+    const recentDays = typeof options.recentDays === 'number' ? options.recentDays : 3;
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - recentDays);
+
+    let filtered = articles.filter(a => {
+      if (!a.publish_date) return true;
+      const pd = new Date(a.publish_date);
+      return pd >= cutoff;
+    });
+    filtered = filtered.slice(0, max);
+
+    // Now, fetch content for each article concurrently with a small worker pool
+    const concurrency = options.concurrency || 4;
+    const { mapConcurrent } = require('./utils');
+    await mapConcurrent(filtered, concurrency, async (art, i) => {
+      console.log(`[UDN] Fetching content for article ${i + 1}/${filtered.length}: ${art.title}`);
       try {
         const html = await fetchHtml(art.url);
         const $ = cheerio.load(html);
-        
+
         // Match content paragraphs
         let contentText = '';
         $('section.article-content__editor p, .article-content__editor p, .story p, #article_body p').each((_, p) => {
@@ -82,18 +96,18 @@ async function scrapeUDN(keyword) {
         }
 
         art.content = contentText.trim();
-        await sleep(1000); // 1s delay
+        if (options.delayMs) await sleep(options.delayMs);
       } catch (err) {
         console.error(`[UDN] Failed to fetch article content from ${art.url}:`, err.message);
         art.content = '';
       }
-    }
+    });
 
   } catch (err) {
     console.error('[UDN] Scrape failed:', err.message);
   }
 
-  return articles.filter(a => a.content);
+  return (filtered || []).filter(a => a.content);
 }
 
 module.exports = scrapeUDN;
