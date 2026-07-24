@@ -19,7 +19,7 @@ function startScheduler() {
     try {
       // 1. Run the crawler
       console.log('[Scheduler] Starting daily crawl...');
-      const stats = await runCrawler('新北市選舉');
+      const stats = await runCrawler();
       console.log('[Scheduler] Daily crawl completed stats:', stats);
       
       if (stats.success && stats.todayArticlesCount > 0) {

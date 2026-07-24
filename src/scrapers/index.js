@@ -1,6 +1,7 @@
 const scrapeUDN = require('./udn');
 const scrapeLTN = require('./ltn');
 const scrapeChinatimes = require('./chinatimes');
+const scrapeYahoo = require('./yahoo');
 
 /**
  * Scrape all three newspapers for a keyword.
@@ -36,6 +37,14 @@ async function scrapeAll(keyword) {
     console.error('[Scraper Engine] China Times scraping failed:', err.message);
   }
 
+  try {
+    const yahooArticles = await scrapeYahoo(keyword);
+    results.push(...yahooArticles);
+    console.log(`[Scraper Engine] Yahoo scraped: ${yahooArticles.length} articles`);
+  } catch (err) {
+    console.error('[Scraper Engine] Yahoo scraping failed:', err.message);
+  }
+
   console.log(`[Scraper Engine] Crawl complete. Total articles fetched: ${results.length}`);
   return results;
 }
@@ -44,5 +53,6 @@ module.exports = {
   scrapeAll,
   scrapeUDN,
   scrapeLTN,
-  scrapeChinatimes
+  scrapeChinatimes,
+  scrapeYahoo
 };

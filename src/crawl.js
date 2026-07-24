@@ -9,7 +9,15 @@ const { summarizeArticle, generateDailySummary } = require('./ai');
  * @returns {Promise<Object>} Summary statistics of the run
  */
 async function runCrawler(keywordsInput) {
-  let keywords = ['新北市選舉', '柯文哲', '台灣民眾黨', '新北市議員選舉'];
+  let keywords = [
+    '新北市選舉',
+    '新北市長選舉',
+    '新北市議員選舉',
+    '新北市長',
+    '李四川',
+    '蘇巧慧',
+    '侯友宜'
+  ];
   if (Array.isArray(keywordsInput)) {
     keywords = keywordsInput;
   } else if (typeof keywordsInput === 'string' && keywordsInput.trim() !== '') {

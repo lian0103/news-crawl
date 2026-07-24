@@ -51,7 +51,7 @@ app.get('/api/recent-summaries', async (req, res) => {
 app.post('/api/crawl', async (req, res) => {
   console.log('[Server] Manual crawl triggered via API');
   try {
-    const stats = await runCrawler('新北市選舉');
+    const stats = await runCrawler();
     res.json({ success: true, stats });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
