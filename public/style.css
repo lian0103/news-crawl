@@ -353,7 +353,7 @@ body {
 
 .week-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(1, minmax(0, 1fr));
   gap: 14px;
 }
 
@@ -509,6 +509,75 @@ body {
   gap: 10px;
   align-items: center;
 }
+
+/* Table view improvements: spacing, zebra rows, responsive scroll */
+.table-view {
+  overflow-x: auto;
+  padding: 12px;
+}
+.table-view .simple-table {
+  width: 100%;
+  min-width: 720px;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: #ffffff;
+  border-radius: 12px;
+  overflow: hidden;
+}
+.table-view .simple-table thead th {
+  background: rgba(236, 251, 251, 0.9);
+  padding: 10px 14px;
+  text-align: left;
+  font-size: 13px;
+  color: var(--text-secondary);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+.table-view .simple-table tbody td {
+  padding: 12px 14px;
+  border-bottom: 1px solid #f1fbfb;
+  vertical-align: top;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+.table-view .simple-table tbody tr:nth-child(odd) {
+  background: #fbffff;
+}
+.table-view .simple-table tbody tr:hover {
+  background: #f0fbfb;
+}
+.table-view .simple-table td:first-child,
+.table-view .simple-table thead th:first-child {
+  width: 44px;
+  text-align: center;
+}
+.table-view .simple-table td:last-child,
+.table-view .simple-table thead th:last-child {
+  width: 96px;
+  text-align: center;
+}
+.table-view .simple-table td:nth-child(2) {
+  max-width: 520px;
+  white-space: normal;
+  word-break: break-word;
+}
+.table-view .simple-table a { color: var(--accent-ink); text-decoration: none; }
+.table-view .simple-table a:hover { text-decoration: underline; }
+
+.btn-delete {
+  background: transparent;
+  border: 1px solid rgba(214,70,91,0.12);
+  color: var(--color-neg);
+  padding: 6px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 700;
+}
+.btn-delete:hover {
+  background: rgba(214,70,91,0.06);
+}
+
 
 .news-tags {
   display: flex;

@@ -4,7 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const { dbOps, initDatabase } = require('./db');
 const runCrawler = require('./crawl');
-const { generatePDFReport, generatePDFReportRange } = require('./pdf');
+const { generatePDFReport, generatePDFReportRange, generatePDFForIds } = require('./pdf');
 const { sendDailyEmail } = require('./mailer');
 const startScheduler = require('./scheduler');
 
@@ -75,6 +75,23 @@ app.post('/api/crawl', async (req, res) => {
   }
 });
 
+// API: Delete an article by id
+app.delete('/api/article/:id', async (req, res) => {
+  const id = parseInt(req.params.id);
+  if (!id) return res.status(400).json({ success: false, error: 'Invalid id' });
+
+  try {
+    const changes = await dbOps.deleteArticleById(id);
+    if (changes > 0) {
+      res.json({ success: true, id, deleted: true });
+    } else {
+      res.status(404).json({ success: false, error: 'Article not found' });
+    }
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // API: Download PDF report
 app.get('/api/download-pdf', async (req, res) => {
   const start = req.query.start;
@@ -96,6 +113,26 @@ app.get('/api/download-pdf', async (req, res) => {
     }
   } catch (err) {
     console.error('[Server] PDF download generation failed:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// API: Download PDF for selected article IDs (ids as comma-separated list)
+app.get('/api/download-pdf-selected', async (req, res) => {
+  const idsParam = req.query.ids;
+  if (!idsParam) return res.status(400).json({ success: false, error: '請提供 ids 參數 (逗號分隔的 article IDs)' });
+
+  const ids = idsParam.split(',').map(s => parseInt(s, 10)).filter(n => !Number.isNaN(n));
+  if (ids.length === 0) return res.status(400).json({ success: false, error: '無效的 ids 參數' });
+
+  try {
+    const pdfPath = await generatePDFForIds(ids);
+    const filename = `新聞整理_${Date.now()}.pdf`;
+    res.download(pdfPath, filename, (err) => {
+      if (err) console.error('[Server] PDF selected download error:', err.message);
+    });
+  } catch (err) {
+    console.error('[Server] PDF selected generation failed:', err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });

@@ -10,13 +10,12 @@ const { summarizeArticle, generateDailySummary } = require('./ai');
  */
 async function runCrawler(keywordsInput) {
   let keywords = [
-    '新北市選舉',
-    '新北市長選舉',
-    '新北市議員選舉',
     '新北市長',
+    '新北市議員',
+    '台灣民眾黨',
     '李四川',
     '蘇巧慧',
-    '侯友宜'
+    '吳亞倫',
   ];
   if (Array.isArray(keywordsInput)) {
     keywords = keywordsInput;

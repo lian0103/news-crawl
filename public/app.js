@@ -5,6 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnToday = document.getElementById('btn-today');
   const btnCrawl = document.getElementById('btn-crawl');
   const btnDownload = document.getElementById('btn-download');
+  // removed toggle button; always show table view
   const loadingOverlay = document.getElementById('loading-overlay');
 
   const weekRangeLabel = document.getElementById('week-range-label');
@@ -22,34 +23,30 @@ document.addEventListener('DOMContentLoaded', () => {
   const segChinatimes = document.querySelector('.p-chinatimes');
 
   const todayStr = getTaipeiTodayString();
-  dateInput.value = todayStr;
-  dateInput.max = todayStr;
+  // default range to today
+  if (rangeStart) rangeStart.value = todayStr;
+  if (rangeEnd) rangeEnd.value = todayStr;
 
-  loadWeekData(todayStr);
+  loadWeekData();
 
-  dateInput.addEventListener('change', (e) => {
-    loadWeekData(e.target.value);
-  });
+  // always use table/list view
+  let currentArticles = [];
+  let selectedIds = new Set();
+  let titleFilter = '';
+  let sortField = 'publish_date';
+  let sortDir = 'desc'; // 'asc' or 'desc'
 
-  btnPrevDate.addEventListener('click', () => {
-    const newDate = shiftDate(dateInput.value, -7);
-    dateInput.value = newDate;
-    loadWeekData(newDate);
-  });
+  // range inputs trigger reload
+  if (rangeStart) rangeStart.addEventListener('change', () => loadWeekData());
+  if (rangeEnd) rangeEnd.addEventListener('change', () => loadWeekData());
 
-  btnNextDate.addEventListener('click', () => {
-    const newDate = shiftDate(dateInput.value, 7);
-    if (newDate <= getTaipeiTodayString()) {
-      dateInput.value = newDate;
-      loadWeekData(newDate);
-    }
-  });
-
-  btnToday.addEventListener('click', () => {
-    const today = getTaipeiTodayString();
-    dateInput.value = today;
-    loadWeekData(today);
-  });
+  const titleFilterInput = document.getElementById('title-filter');
+  if (titleFilterInput) {
+    titleFilterInput.addEventListener('input', (e) => {
+      titleFilter = (e.target.value || '').trim().toLowerCase();
+      renderTableView(currentArticles);
+    });
+  }
 
   btnCrawl.addEventListener('click', async () => {
     loadingOverlay.classList.remove('hidden');
@@ -60,7 +57,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (data.success) {
         showToast(`爬網完成：新增 ${data.stats.newCount} 篇，跳過 ${data.stats.skippedCount} 篇`);
-        loadWeekData(dateInput.value);
+        loadWeekData();
       } else {
         showToast('爬網失敗：' + (data.error || '未知錯誤'));
       }
@@ -72,19 +69,24 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   btnDownload.addEventListener('click', () => {
+    // if any rows selected, download selected PDF (respect selection across filters)
+    const checked = Array.from(selectedIds);
+    if (checked && checked.length > 0) {
+      window.open(`/api/download-pdf-selected?ids=${checked.join(',')}`, '_blank');
+      return;
+    }
+
     const start = rangeStart && rangeStart.value ? rangeStart.value : null;
     const end = rangeEnd && rangeEnd.value ? rangeEnd.value : null;
 
     if (start && end) {
-      // basic validation
       if (start > end) {
         showToast('區間起日不可晚於迄日');
         return;
       }
       window.open(`/api/download-pdf?start=${start}&end=${end}`, '_blank');
     } else {
-      const date = dateInput.value;
-      window.open(`/api/download-pdf?date=${date}`, '_blank');
+      showToast('請先設定下載區間或選取至少一筆文章');
     }
   });
 
@@ -96,48 +98,125 @@ document.addEventListener('DOMContentLoaded', () => {
     btnToday.disabled = lockForward;
   }
 
-  async function loadWeekData(anchorDate) {
-    updateDateButtonsState(anchorDate);
+  async function loadWeekData() {
+    weekContainer.innerHTML = '<div class="empty-state glass"><div class="spinner small"></div><p>正在讀取新聞資料...</p></div>';
 
-    const weekDates = getWeekDates(anchorDate);
-    weekRangeLabel.innerText = `${formatDateLabel(weekDates[0])} - ${formatDateLabel(weekDates[6])}`;
-    // Update range inputs to match current week selection
-    if (rangeStart) rangeStart.value = weekDates[0];
-    if (rangeEnd) rangeEnd.value = weekDates[6];
-    weekContainer.innerHTML = '<div class="empty-state glass"><div class="spinner small"></div><p>正在讀取本週新聞資料...</p></div>';
+    const start = rangeStart && rangeStart.value ? rangeStart.value : todayStr;
+    const end = rangeEnd && rangeEnd.value ? rangeEnd.value : todayStr;
+
+    if (weekRangeLabel) weekRangeLabel.innerText = `${start} - ${end}`;
 
     try {
-      // Use the new range API to fetch all 7 days in one request
-      const res = await fetch(`/api/news-range?start=${weekDates[0]}&end=${weekDates[6]}`);
-
-      // Read raw text first to avoid json parse errors when server returns HTML/error pages
+      const res = await fetch(`/api/news-range?start=${start}&end=${end}`);
       const raw = await res.text();
       let payload;
-      try {
-        payload = raw ? JSON.parse(raw) : {};
-      } catch (parseErr) {
-        throw new Error(`伺服器回傳不可解析內容 (status=${res.status}): ${raw}`);
-      }
-
-      if (!res.ok) {
-        throw new Error(payload.error || `伺服器錯誤 (status=${res.status})`);
-      }
+      try { payload = raw ? JSON.parse(raw) : {}; } catch (parseErr) { throw new Error(`伺服器回傳不可解析內容 (status=${res.status}): ${raw}`); }
+      if (!res.ok) throw new Error(payload.error || `伺服器錯誤 (status=${res.status})`);
 
       const allArticles = Array.isArray(payload.articles) ? payload.articles : [];
-
-      // Group articles by publish_date to build dailyData for rendering
-      const dailyData = weekDates.map(date => {
-        const records = allArticles.filter(a => a.publish_date === date);
-        return { date, articles: records };
-      });
-
-      const weeklyArticles = dailyData.flatMap(day => day.articles);
-      updateStats(weeklyArticles);
-      renderWeekBlocks(dailyData);
+      currentArticles = allArticles;
+      updateStats(allArticles);
+      renderTableView(currentArticles);
     } catch (err) {
-      console.error('Error loading weekly data:', err);
+      console.error('Error loading data:', err);
       showToast('載入失敗：' + (err.message || '請檢查伺服器連線後再試一次。'));
       weekContainer.innerHTML = `<div class="empty-state glass"><h3>載入失敗</h3><p>${err.message ? escapeHtml(err.message) : '請檢查伺服器連線後再試一次。'}</p></div>`;
+    }
+  }
+
+  function renderTableView(articles) {
+    if (!articles || articles.length === 0) {
+      weekContainer.innerHTML = '<div class="empty-state glass"><p>在所選區間內沒有新聞資料。</p></div>';
+      return;
+    }
+
+    // apply title filter then sorting
+    let filtered = Array.isArray(articles) ? articles.slice() : [];
+    if (titleFilter) {
+      filtered = filtered.filter(a => (a.title || '').toLowerCase().includes(titleFilter));
+    }
+    let sorted = filtered;
+    if (sortField) {
+      sorted.sort((a, b) => {
+        const va = a[sortField] || '';
+        const vb = b[sortField] || '';
+        const ta = Date.parse(va) || 0;
+        const tb = Date.parse(vb) || 0;
+        if (ta === tb) return 0;
+        return sortDir === 'asc' ? ta - tb : tb - ta;
+      });
+    }
+
+    const rows = sorted.map(art => {
+      const title = art.title ? escapeHtml(art.title) : '（無標題）';
+      const source = art.source ? escapeHtml(art.source) : '未知來源';
+      const publishDate = art.publish_date ? escapeHtml(art.publish_date) : '';
+      const link = art.url ? `<a href="${escapeHtml(art.url)}" target="_blank" rel="noopener noreferrer">原文</a>` : '';
+      return `
+        <tr>
+          <td><input type="checkbox" class="row-select" data-id="${art.id}" ${selectedIds.has(String(art.id)) ? 'checked' : ''}></td>
+          <td>${title}</td>
+          <td>${publishDate}</td>
+          <td>${source}</td>
+          <td>${link}</td>
+          <td><button class="btn-delete" data-id="${art.id}">刪除</button></td>
+        </tr>
+      `;
+    }).join('');
+
+    weekContainer.innerHTML = `
+      <div class="table-view glass">
+        <table class="simple-table">
+          <thead><tr><th><input type="checkbox" id="select-all"></th><th>標題</th><th id="th-publish" style="cursor:pointer;">發佈日 <span id="sort-indicator">${sortField==='publish_date'?(sortDir==='asc'?'▲':'▼'):''}</span></th><th>來源</th><th>連結</th><th>操作</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    `;
+
+    // attach sort handler
+    const thPublish = document.getElementById('th-publish');
+    if (thPublish) {
+      thPublish.addEventListener('click', () => {
+        if (sortField === 'publish_date') {
+          sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+        } else {
+          sortField = 'publish_date';
+          sortDir = 'desc';
+        }
+        renderTableView(currentArticles);
+      });
+    }
+
+    // update select-all handler and other bindings below
+
+    const selectAll = document.getElementById('select-all');
+    if (selectAll) {
+      selectAll.addEventListener('change', (e) => {
+        const checked = !!e.target.checked;
+        // only affect visible row checkboxes and update selectedIds set
+        document.querySelectorAll('.row-select').forEach(cb => {
+          const id = cb.getAttribute('data-id');
+          cb.checked = checked;
+          if (checked) selectedIds.add(id);
+          else selectedIds.delete(id);
+        });
+      });
+    }
+
+    // attach per-row checkbox listeners to track selection across filters
+    document.querySelectorAll('.row-select').forEach(cb => {
+      cb.addEventListener('change', (e) => {
+        const id = e.target.getAttribute('data-id');
+        if (!id) return;
+        if (e.target.checked) selectedIds.add(id);
+        else selectedIds.delete(id);
+      });
+    });
+    // reflect select-all checked state based on visible rows
+    if (selectAll) {
+      const visibleIds = Array.from(document.querySelectorAll('.row-select')).map(cb => cb.getAttribute('data-id'));
+      const allSelected = visibleIds.length > 0 && visibleIds.every(id => selectedIds.has(id));
+      selectAll.checked = allSelected;
     }
   }
 
@@ -151,88 +230,32 @@ document.addEventListener('DOMContentLoaded', () => {
       .replace(/'/g, '&#039;');
   }
 
-  function renderWeekBlocks(dailyData) {
-    weekContainer.innerHTML = dailyData.map(day => renderDayCard(day)).join('');
+  // card/list rendering removed — only table/list view is used now
 
-    document.querySelectorAll('.btn-toggle-text').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        const id = e.target.getAttribute('data-id');
-        const contentBox = document.getElementById(`content-${id}`);
-        if (!contentBox) return;
+  // Attach delete handlers after rendering
+  document.addEventListener('click', async (e) => {
+    const btn = e.target.closest && e.target.closest('.btn-delete');
+    if (!btn) return;
 
-        if (contentBox.classList.contains('expanded')) {
-          contentBox.classList.remove('expanded');
-          e.target.innerText = '展開全文';
-        } else {
-          contentBox.classList.add('expanded');
-          e.target.innerText = '收合全文';
-        }
-      });
-    });
-  }
+    const id = btn.getAttribute('data-id');
+    if (!id) return;
 
-  function renderDayCard(dayData) {
-    const dayLabel = getWeekdayName(dayData.date);
-    const articles = dayData.articles;
+    if (!confirm('確定要刪除此筆新聞？此動作無法復原。')) return;
 
-    const articlesMarkup = articles.length
-      ? articles.map(renderNewsItem).join('')
-      : '<div class="day-empty">本日沒有爬取到新聞資料</div>';
-
-    return `
-      <section class="day-card glass">
-        <header class="day-header">
-          <div>
-            <h3>${formatDateLabel(dayData.date)} <span>${dayLabel}</span></h3>
-            <p>${articles.length} 篇新聞</p>
-          </div>
-        </header>
-        <div class="day-articles">${articlesMarkup}</div>
-      </section>
-    `;
-  }
-
-  function renderNewsItem(art) {
-    const sourceClass = art.source === '聯合報'
-      ? 'udn'
-      : (art.source === '自由時報' ? 'ltn' : 'chinatimes');
-
-    const keywordsArray = art.keywords
-      ? art.keywords.split(',').map(k => k.trim()).filter(Boolean)
-      : [];
-
-    const content = art.content || '';
-    const snippet = content.slice(0, 120);
-
-    return `
-      <article class="news-card">
-        <div class="news-header">
-          <span class="news-source ${sourceClass}">${art.source || '未知來源'}</span>
-          <span class="news-time">${art.publish_date || ''}</span>
-        </div>
-
-        <h4>${art.title || '（無標題）'}</h4>
-
-        <p class="news-snippet">${snippet || '（無內文）'}${snippet.length >= 120 ? '...' : ''}</p>
-
-        <div class="news-original-box">
-          <div class="news-original collapsible" id="content-${art.id}">
-            ${content ? content.replace(/\n/g, '<br>') : '（無內文）'}
-          </div>
-          <button class="btn-toggle-text" data-id="${art.id}">展開全文</button>
-        </div>
-
-        <div class="news-footer">
-          <div class="news-tags">
-            ${keywordsArray.map(tag => `<span class="news-tag">#${tag}</span>`).join('')}
-          </div>
-          <div class="news-link">
-            <a href="${art.url}" target="_blank" rel="noopener noreferrer">看原文 ↗</a>
-          </div>
-        </div>
-      </article>
-    `;
-  }
+    try {
+      const res = await fetch(`/api/article/${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showToast('刪除成功');
+        // Reload current view
+        loadWeekData();
+      } else {
+        showToast('刪除失敗：' + (data.error || '未知錯誤'));
+      }
+    } catch (err) {
+      showToast('刪除請求失敗：' + err.message);
+    }
+  });
 
   function updateStats(newsList) {
     const total = newsList.length;
@@ -240,22 +263,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let udn = 0;
     let ltn = 0;
-    let chinatimes = 0;
+    let others = 0;
 
     newsList.forEach(art => {
       if (art.source === '聯合報') udn += 1;
       else if (art.source === '自由時報') ltn += 1;
-      else if (art.source === '中國時報') chinatimes += 1;
+      else others += 1;
     });
 
     lblUdn.innerText = udn;
     lblLtn.innerText = ltn;
-    lblChinatimes.innerText = chinatimes;
+    lblChinatimes.innerText = others; // repurposed label for '其他來源'
 
     if (total > 0) {
       segUdn.style.width = `${(udn / total) * 100}%`;
       segLtn.style.width = `${(ltn / total) * 100}%`;
-      segChinatimes.style.width = `${(chinatimes / total) * 100}%`;
+      segChinatimes.style.width = `${(others / total) * 100}%`;
     } else {
       segUdn.style.width = '0%';
       segLtn.style.width = '0%';

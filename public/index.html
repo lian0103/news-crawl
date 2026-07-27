@@ -26,15 +26,10 @@
       </div>
       
       <div class="controls">
-        <div class="date-select-wrapper">
-          <label for="date-select">選擇週期基準日</label>
-          <div class="date-picker-nav-group">
-            <button id="btn-prev-date" class="btn-date-nav" title="前一週">◀</button>
-            <input type="date" id="date-select" class="glass-input">
-            <button id="btn-next-date" class="btn-date-nav" title="後一週">▶</button>
-            <button id="btn-today" class="btn-date-today" title="回到本週">本週</button>
-          </div>
-          <div id="week-range-label" class="week-range-label">--</div>
+        <!-- 選擇週期基準日已移除，改為使用下載區間(range-start / range-end) -->
+        <div class="title-search-wrapper">
+          <label for="title-filter">搜尋標題</label>
+          <input id="title-filter" type="search" class="glass-input" placeholder="輸入關鍵字篩選標題（可部分匹配）" style="width:220px;">
         </div>
         <div class="date-range-wrapper">
           <label>下載 / 匯出區間</label>
@@ -83,12 +78,12 @@
             <div class="source-bar-progress">
               <div class="progress-segment p-udn" style="width: 0%" title="聯合報"></div>
               <div class="progress-segment p-ltn" style="width: 0%" title="自由時報"></div>
-              <div class="progress-segment p-chinatimes" style="width: 0%" title="中國時報"></div>
+              <div class="progress-segment p-chinatimes" style="width: 0%" title="其他來源"></div>
             </div>
             <div class="source-legend">
               <span class="legend-item"><span class="dot udn"></span> 聯合報: <strong id="lbl-udn">0</strong></span>
               <span class="legend-item"><span class="dot ltn"></span> 自由時報: <strong id="lbl-ltn">0</strong></span>
-              <span class="legend-item"><span class="dot chinatimes"></span> 中時: <strong id="lbl-chinatimes">0</strong></span>
+              <span class="legend-item"><span class="dot chinatimes"></span> 其他來源: <strong id="lbl-chinatimes">0</strong></span>
             </div>
           </div>
         </div>
@@ -111,7 +106,7 @@
     <!-- Footer -->
     <footer class="footer">
       <p>© 2026 新北市選舉輿情分析系統. All rights reserved.</p>
-      <p>資料每日自動抓取自聯合報、自由電子報、中國時報電子報，分析結果僅供內部團隊評估選情使用。</p>
+      <p>資料每日自動抓取自聯合報、自由電子報與其他公開來源，分析結果僅供內部團隊評估選情使用。</p>
     </footer>
   </div>
 

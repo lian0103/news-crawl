@@ -1,6 +1,7 @@
 const scrapeUDN = require('./udn');
 const scrapeLTN = require('./ltn');
-const scrapeChinatimes = require('./chinatimes');
+// China Times removed; use search engine scraper instead
+const scrapeSearchEngine = require('./searchengine');
 const scrapeYahoo = require('./yahoo');
 
 /**
@@ -30,11 +31,11 @@ async function scrapeAll(keyword, options = {}) {
   }
 
   try {
-    const chinatimesArticles = await scrapeChinatimes(keyword, options);
-    results.push(...chinatimesArticles);
-    console.log(`[Scraper Engine] China Times scraped: ${chinatimesArticles.length} articles`);
+    const searchArticles = await scrapeSearchEngine(keyword, options);
+    results.push(...searchArticles);
+    console.log(`[Scraper Engine] Search engine scraped: ${searchArticles.length} articles`);
   } catch (err) {
-    console.error('[Scraper Engine] China Times scraping failed:', err.message);
+    console.error('[Scraper Engine] Search engine scraping failed:', err.message);
   }
 
   try {
@@ -53,6 +54,6 @@ module.exports = {
   scrapeAll,
   scrapeUDN,
   scrapeLTN,
-  scrapeChinatimes,
+  scrapeSearchEngine,
   scrapeYahoo
 };

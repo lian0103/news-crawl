@@ -127,6 +127,52 @@ const dbOps = {
     });
   },
 
+  // Get articles by a list of IDs
+  getArticlesByIds(ids) {
+    return new Promise((resolve, reject) => {
+      if (!Array.isArray(ids) || ids.length === 0) return resolve([]);
+      const placeholders = ids.map(() => '?').join(',');
+      const query = `SELECT * FROM articles WHERE id IN (${placeholders}) ORDER BY publish_date DESC, crawled_at DESC`;
+      db.all(query, ids, (err, rows) => {
+        if (err) return reject(err);
+        resolve(rows);
+      });
+    });
+  },
+
+  // Get all articles
+  getAllArticles() {
+    return new Promise((resolve, reject) => {
+      const query = `SELECT * FROM articles ORDER BY crawled_at DESC`;
+      db.all(query, [], (err, rows) => {
+        if (err) return reject(err);
+        resolve(rows);
+      });
+    });
+  },
+
+  // Update publish_date for an article by id
+  updatePublishDate(id, publish_date) {
+    return new Promise((resolve, reject) => {
+      const query = `UPDATE articles SET publish_date = ? WHERE id = ?`;
+      db.run(query, [publish_date, id], function(err) {
+        if (err) return reject(err);
+        resolve(this.changes);
+      });
+    });
+  },
+
+  // Delete an article by id
+  deleteArticleById(id) {
+    return new Promise((resolve, reject) => {
+      const query = `DELETE FROM articles WHERE id = ?`;
+      db.run(query, [id], function(err) {
+        if (err) return reject(err);
+        resolve(this.changes); // number of rows deleted
+      });
+    });
+  },
+
   // Save or update daily summary
   saveDailySummary(date, summaryText, crawledCount, sentimentDist) {
     return new Promise((resolve, reject) => {
