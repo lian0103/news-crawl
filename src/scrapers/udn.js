@@ -1,6 +1,6 @@
 const cheerio = require('cheerio');
 const axios = require('axios');
-const { fetchHtml, cleanText, sleep } = require('./utils');
+const { fetchHtml, cleanText, sleep, extractPublishDateFromHtml } = require('./utils');
 
 /**
  * Scrape articles from UDN search results.
@@ -38,7 +38,7 @@ async function scrapeUDN(keyword, options = {}) {
       if (item.time && item.time.date) {
         publishDate = item.time.date.split(' ')[0]; // gets YYYY-MM-DD
       } else {
-        publishDate = new Date().toISOString().substring(0, 10);
+        publishDate = '';
       }
 
       if (!url || !title) continue;
@@ -96,6 +96,12 @@ async function scrapeUDN(keyword, options = {}) {
         }
 
         art.content = contentText.trim();
+        try {
+          const found = await extractPublishDateFromHtml(html, art.url);
+          if (found) art.publish_date = found;
+        } catch (e) {
+          // ignore
+        }
         if (options.delayMs) await sleep(options.delayMs);
       } catch (err) {
         console.error(`[UDN] Failed to fetch article content from ${art.url}:`, err.message);

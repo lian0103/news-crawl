@@ -1,5 +1,5 @@
 const cheerio = require('cheerio');
-const { fetchHtml, cleanText, sleep } = require('./utils');
+const { fetchHtml, cleanText, sleep, extractPublishDateFromHtml } = require('./utils');
 
 /**
  * Scrape articles from China Times search results.
@@ -40,7 +40,7 @@ async function scrapeChinatimes(keyword, options = {}) {
         if (match) {
           publishDate = `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`;
         } else {
-          publishDate = new Date().toISOString().substring(0, 10);
+          publishDate = '';
         }
 
         const absoluteUrl = href.startsWith('/') ? `https://www.chinatimes.com${href}` : href;
@@ -88,6 +88,13 @@ async function scrapeChinatimes(keyword, options = {}) {
         });
 
         art.content = contentText.trim();
+        // Try to extract publish date from the article page if not present or suspicious
+        try {
+          const found = await extractPublishDateFromHtml(artHtml, art.url);
+          if (found) art.publish_date = found;
+        } catch (e) {
+          // ignore extraction errors
+        }
         if (options.delayMs) await sleep(options.delayMs);
       } catch (err) {
         console.error(`[China Times] Failed to fetch article content from ${art.url}:`, err.message);

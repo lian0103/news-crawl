@@ -1,5 +1,5 @@
 const cheerio = require('cheerio');
-const { fetchHtml, cleanText, sleep, mapConcurrent } = require('./utils');
+const { fetchHtml, cleanText, sleep, mapConcurrent, extractPublishDateFromHtml } = require('./utils');
 const { URL } = require('url');
 
 /**
@@ -38,12 +38,12 @@ async function scrapeSearchEngine(keyword, options = {}) {
         source = 'unknown';
       }
 
-      if (!candidates.has(href)) {
+        if (!candidates.has(href)) {
         candidates.set(href, {
           title: text,
           source,
           url: href,
-          publish_date: new Date().toISOString().substring(0, 10)
+          publish_date: ''
         });
       }
     });
@@ -75,6 +75,13 @@ async function scrapeSearchEngine(keyword, options = {}) {
           if (t && t.length > 20) content += cleanText(t) + '\n';
         });
         art.content = content.trim();
+        // Try to extract publish date from article page
+        try {
+          const found = await extractPublishDateFromHtml(pageHtml, art.url);
+          if (found) art.publish_date = found;
+        } catch (e) {
+          // ignore
+        }
         // small delay to be gentle
         if (options.delayMs) await sleep(options.delayMs);
       } catch (err) {

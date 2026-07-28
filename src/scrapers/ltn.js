@@ -1,5 +1,5 @@
 const cheerio = require('cheerio');
-const { fetchHtml, cleanText, sleep } = require('./utils');
+const { fetchHtml, cleanText, sleep, extractPublishDateFromHtml } = require('./utils');
 
 /**
  * Scrape articles from LTN search results.
@@ -28,7 +28,7 @@ async function scrapeLTN(keyword, options = {}) {
       if (match) {
         publishDate = `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`;
       } else {
-        publishDate = new Date().toISOString().substring(0, 10);
+        publishDate = '';
       }
 
       if (url && title) {
@@ -76,6 +76,12 @@ async function scrapeLTN(keyword, options = {}) {
         });
 
         art.content = contentText.trim();
+        try {
+          const found = await extractPublishDateFromHtml(artHtml, art.url);
+          if (found) art.publish_date = found;
+        } catch (e) {
+          // ignore
+        }
         if (options.delayMs) await sleep(options.delayMs);
       } catch (err) {
         console.error(`[LTN] Failed to fetch article content from ${art.url}:`, err.message);

@@ -60,7 +60,7 @@ async function scrapeYahoo(keyword, options = {}) {
           title,
           source: 'Yahoo新聞',
           url: cleanUrl,
-          publish_date: new Date().toISOString().substring(0, 10)
+          publish_date: ''
         });
       }
     });
@@ -90,11 +90,20 @@ async function scrapeYahoo(keyword, options = {}) {
         const artHtml = await fetchHtml(art.url, true);
         const $art = cheerio.load(artHtml);
 
-        const publishDate =
+        let publishDate =
           toDateOnly($art('meta[property="article:published_time"]').attr('content')) ||
           toDateOnly($art('time').first().attr('datetime')) ||
           toDateOnly($art('time').first().text()) ||
-          art.publish_date;
+          art.publish_date || '';
+
+        // As a fallback, try the shared extractor
+        try {
+          const { extractPublishDateFromHtml } = require('./utils');
+          const found = await extractPublishDateFromHtml(artHtml, art.url);
+          if (found) publishDate = publishDate || found;
+        } catch (e) {
+          // ignore
+        }
 
         const publisherText =
           cleanText($art('meta[property="og:site_name"]').attr('content')) ||
