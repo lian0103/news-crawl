@@ -108,8 +108,9 @@ const dbOps = {
   // Get articles by publish date
   getArticlesByDate(date) {
     return new Promise((resolve, reject) => {
-      const query = `SELECT * FROM articles WHERE publish_date = ? ORDER BY crawled_at DESC`;
-      db.all(query, [date], (err, rows) => {
+      // Include articles where publish_date matches OR publish_date is empty but crawled_at falls on the date
+      const query = `SELECT * FROM articles WHERE publish_date = ? OR (publish_date = '' AND date(crawled_at) = ?) ORDER BY crawled_at DESC`;
+      db.all(query, [date, date], (err, rows) => {
         if (err) return reject(err);
         resolve(rows);
       });
@@ -119,8 +120,9 @@ const dbOps = {
   // Get articles in a date range
   getArticlesRange(startDate, endDate) {
     return new Promise((resolve, reject) => {
-      const query = `SELECT * FROM articles WHERE publish_date >= ? AND publish_date <= ? ORDER BY publish_date DESC, crawled_at DESC`;
-      db.all(query, [startDate, endDate], (err, rows) => {
+      // Include articles whose publish_date falls in range OR those without publish_date but crawled_at within range
+      const query = `SELECT * FROM articles WHERE (publish_date >= ? AND publish_date <= ?) OR (publish_date = '' AND date(crawled_at) >= ? AND date(crawled_at) <= ?) ORDER BY publish_date DESC, crawled_at DESC`;
+      db.all(query, [startDate, endDate, startDate, endDate], (err, rows) => {
         if (err) return reject(err);
         resolve(rows);
       });

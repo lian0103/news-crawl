@@ -127,7 +127,8 @@ app.get('/api/download-pdf-selected', async (req, res) => {
 
   try {
     const pdfPath = await generatePDFForIds(ids);
-    const filename = `新聞整理_${Date.now()}.pdf`;
+    const dateTag = new Date().toISOString().substring(0, 10);
+    const filename = `新聞整理_${dateTag}.pdf`;
     res.download(pdfPath, filename, (err) => {
       if (err) console.error('[Server] PDF selected download error:', err.message);
     });
