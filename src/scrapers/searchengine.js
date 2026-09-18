@@ -1,6 +1,7 @@
 const cheerio = require('cheerio');
-const { fetchHtml, cleanText, sleep, mapConcurrent, extractPublishDateFromHtml } = require('./utils');
+const { fetchHtml, cleanText, sleep, mapConcurrent, extractPublishDateFromHtml, extractArticleBody } = require('./utils');
 const { URL } = require('url');
+const { canonicalizeUrl, dedupeParagraphs, isRelevantCandidate, isWithinRecentDays } = require('./quality');
 
 /**
  * Use a search engine (Bing News) to find relevant articles for a keyword.
@@ -30,19 +31,20 @@ async function scrapeSearchEngine(keyword, options = {}) {
       if (text.length < 15) return;
 
       // Use hostname as source when available
+      const cleanUrl = canonicalizeUrl(href);
       let source = '';
       try {
-        const u = new URL(href);
+        const u = new URL(cleanUrl);
         source = u.hostname.replace('www.', '');
       } catch (e) {
         source = 'unknown';
       }
 
-        if (!candidates.has(href)) {
-        candidates.set(href, {
+      if (!candidates.has(cleanUrl) && isRelevantCandidate(text, keyword)) {
+        candidates.set(cleanUrl, {
           title: text,
           source,
-          url: href,
+          url: cleanUrl,
           publish_date: ''
         });
       }
@@ -52,12 +54,7 @@ async function scrapeSearchEngine(keyword, options = {}) {
 
     // Apply recentDays filter
     const recentDays = typeof options.recentDays === 'number' ? options.recentDays : 3;
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - recentDays);
-    articles = articles.filter(a => {
-      if (!a.publish_date) return true;
-      return new Date(a.publish_date) >= cutoff;
-    });
+    articles = articles.filter(a => isWithinRecentDays(a.publish_date, recentDays));
 
     // Limit to maxArticles
     const max = options.maxArticles || 8;
@@ -68,13 +65,10 @@ async function scrapeSearchEngine(keyword, options = {}) {
       console.log(`[SearchEngine] Fetching content ${i + 1}/${articles.length}: ${art.url}`);
       try {
         const pageHtml = await fetchHtml(art.url);
-        const $p = cheerio.load(pageHtml);
-        let content = '';
-        $p('article p, p').each((_, p) => {
-          const t = $p(p).text().trim();
-          if (t && t.length > 20) content += cleanText(t) + '\n';
-        });
-        art.content = content.trim();
+        art.content = extractArticleBody(pageHtml, [
+          'article p', '[itemprop="articleBody"] p', '.article-body p',
+          '.article-content p', '.story-body p', 'main article p',
+        ]);
         // Try to extract publish date from article page
         try {
           const found = await extractPublishDateFromHtml(pageHtml, art.url);
@@ -90,10 +84,10 @@ async function scrapeSearchEngine(keyword, options = {}) {
       }
     });
 
-    return articles.filter(a => a.content && a.content.length > 0);
+    return articles.filter(a => a.content && isWithinRecentDays(a.publish_date, recentDays));
   } catch (err) {
     console.error('[SearchEngine] Scrape failed:', err.message);
-    return [];
+    throw err;
   }
 }
 

@@ -2,21 +2,29 @@ require('dotenv').config();
 const { initDatabase, dbOps } = require('./db');
 const { scrapeAll } = require('./scrapers');
 const { summarizeArticle, generateDailySummary } = require('./ai');
+const { mapConcurrent } = require('./scrapers/utils');
+const { canonicalizeUrl, normalizeSource, scoreRelevance, storyKey, taipeiDateString } = require('./scrapers/quality');
+
+const DEFAULT_QUERIES = [
+  '新北市長', '新北選舉', '新北市議員 選舉',
+  '李四川 新北', '蘇巧慧 新北', '吳亞倫 新北',
+];
+let crawlInProgress = false;
 
 /**
  * Main crawler execution function.
  * @param {string} keyword Defaults to '新北市選舉'
  * @returns {Promise<Object>} Summary statistics of the run
  */
-async function runCrawler(keywordsInput) {
-  let keywords = [
-    '新北市長',
-    '新北市議員',
-    '台灣民眾黨',
-    '李四川',
-    '蘇巧慧',
-    '吳亞倫',
-  ];
+async function runCrawler(keywordsInput, runOptions = {}) {
+  if (crawlInProgress) {
+    return { success: false, busy: true, error: 'A crawler run is already in progress' };
+  }
+  crawlInProgress = true;
+  let crawlRunId = null;
+  let keywords = process.env.CRAWL_KEYWORDS
+    ? process.env.CRAWL_KEYWORDS.split(',').map((item) => item.trim()).filter(Boolean)
+    : DEFAULT_QUERIES.slice();
   if (Array.isArray(keywordsInput)) {
     keywords = keywordsInput;
   } else if (typeof keywordsInput === 'string' && keywordsInput.trim() !== '') {
@@ -32,24 +40,44 @@ async function runCrawler(keywordsInput) {
     concurrency: process.env.SCRAPE_CONCURRENCY ? parseInt(process.env.SCRAPE_CONCURRENCY) : 4
   };
   
+  const generateSummary = runOptions.generateSummary !== false;
+
   try {
     // 1. Initialize database
     await initDatabase();
     
-    // 2. Fetch search results for all keywords and deduplicate by URL
+    crawlRunId = await dbOps.startCrawlRun(keywords);
+
+    // 2. Fetch search results with bounded keyword concurrency and deduplicate by canonical URL.
     let rawArticlesMap = new Map();
-    for (const kw of keywords) {
+    await mapConcurrent(keywords, 2, async (kw) => {
       console.log(`[Crawler Run] Scraping for keyword: "${kw}"`);
       try {
         const results = await scrapeAll(kw, scrapeOptions);
         console.log(`[Crawler Run] Keyword "${kw}" returned ${results.length} articles`);
+        if (Array.isArray(results.sourceStats)) {
+          await Promise.all(results.sourceStats.map((stats) =>
+            dbOps.saveCrawlSourceRun(crawlRunId, kw, stats)
+          ));
+        }
         for (const art of results) {
-          rawArticlesMap.set(art.url, art);
+          const url = canonicalizeUrl(art.url);
+          const relevanceScore = scoreRelevance(art.title, kw);
+          const current = rawArticlesMap.get(url);
+          if (!current || relevanceScore > current.relevance_score) {
+            rawArticlesMap.set(url, {
+              ...art,
+              url,
+              source: normalizeSource(art.source, url),
+              relevance_score: relevanceScore,
+              story_key: storyKey(art.title),
+            });
+          }
         }
       } catch (err) {
         console.error(`[Crawler Run] Scraping failed for keyword "${kw}":`, err.message);
       }
-    }
+    });
     
     const rawArticles = Array.from(rawArticlesMap.values());
     console.log(`[Crawler Run] Total unique scraped articles from all keywords: ${rawArticles.length}`);
@@ -59,7 +87,7 @@ async function runCrawler(keywordsInput) {
     let savedArticlesForToday = [];
 
     // Today's date in YYYY-MM-DD format
-    const todayDate = new Date().toISOString().substring(0, 10);
+    const todayDate = taipeiDateString();
 
     // 3. Process each article
     for (let i = 0; i < rawArticles.length; i++) {
@@ -72,6 +100,7 @@ async function runCrawler(keywordsInput) {
       if (existing && existing.summary && existing.sentiment) {
         console.log(`[Crawler Run] Article already exists with summary. Skipping AI analysis.`);
         skippedCount++;
+        await dbOps.touchArticle(existing.id);
         
         // If it's published today, keep it in the list for the daily summary
         if (art.publish_date === todayDate) {
@@ -108,7 +137,7 @@ async function runCrawler(keywordsInput) {
     const todayArticles = await dbOps.getArticlesByDate(todayDate);
     console.log(`[Crawler Run] Total articles for today (${todayDate}): ${todayArticles.length}`);
 
-    if (todayArticles.length > 0) {
+    if (generateSummary && todayArticles.length > 0) {
       console.log('[Crawler Run] Generating daily summary report...');
       const dailySummaryText = await generateDailySummary(todayDate, todayArticles);
 
@@ -122,23 +151,35 @@ async function runCrawler(keywordsInput) {
       // Save daily summary
       await dbOps.saveDailySummary(todayDate, dailySummaryText, todayArticles.length, sentimentDist);
       console.log(`[Crawler Run] Daily summary report for ${todayDate} saved successfully.`);
-    } else {
+    } else if (generateSummary) {
       console.log('[Crawler Run] No articles found for today. Skipping daily summary report generation.');
     }
 
-    return {
+    const result = {
       success: true,
       newCount,
       skippedCount,
+      discoveredCount: rawArticles.length,
       todayArticlesCount: todayArticles.length
     };
+    await dbOps.finishCrawlRun(crawlRunId, { status: 'success', ...result });
+    return result;
 
   } catch (err) {
     console.error('[Crawler Run] Critical error during execution:', err);
+    if (crawlRunId) {
+      try {
+        await dbOps.finishCrawlRun(crawlRunId, { status: 'failed', error: err.message });
+      } catch (logErr) {
+        console.error('[Crawler Run] Failed to finalize crawl log:', logErr.message);
+      }
+    }
     return {
       success: false,
       error: err.message
     };
+  } finally {
+    crawlInProgress = false;
   }
 }
 

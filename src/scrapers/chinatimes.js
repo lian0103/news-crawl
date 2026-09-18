@@ -13,6 +13,7 @@ async function scrapeChinatimes(keyword, options = {}) {
   const searchUrl = `https://www.chinatimes.com/search/${encodedKeyword}?chdtv`;
   
   const articles = [];
+  let filtered = [];
   try {
     // This will trigger Puppeteer automatically because of 'chinatimes.com' domain
     const html = await fetchHtml(searchUrl);
@@ -63,7 +64,7 @@ async function scrapeChinatimes(keyword, options = {}) {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - recentDays);
 
-    let filtered = articles.filter(a => {
+    filtered = articles.filter(a => {
       if (!a.publish_date) return true;
       const pd = new Date(a.publish_date);
       return pd >= cutoff;
@@ -104,6 +105,7 @@ async function scrapeChinatimes(keyword, options = {}) {
 
   } catch (err) {
     console.error('[China Times] Scrape failed:', err.message);
+    throw err;
   }
 
   return (filtered || []).filter(a => a.content);

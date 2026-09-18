@@ -10,7 +10,7 @@
     "scrape-and-export": "npm run crawl && npm run export-static",
     "deploy-static": "sh scripts/deploy_static.sh",
     "scrape-export-deploy": "npm run scrape-and-export && npm run deploy-static",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test"
   },
   "keywords": [],
   "author": "",

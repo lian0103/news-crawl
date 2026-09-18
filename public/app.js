@@ -13,6 +13,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const rangeStart = document.getElementById('range-start');
   const rangeEnd = document.getElementById('range-end');
   const toast = document.getElementById('toast');
+  const syncStatus = document.getElementById('sync-status');
 
   const statTotal = document.getElementById('stat-total');
   const lblUdn = document.getElementById('lbl-udn');
@@ -23,11 +24,17 @@ document.addEventListener('DOMContentLoaded', () => {
   const segChinatimes = document.querySelector('.p-chinatimes');
 
   const todayStr = getTaipeiTodayString();
+  let loadInProgress = false;
   // default range to today
   if (rangeStart) rangeStart.value = todayStr;
   if (rangeEnd) rangeEnd.value = todayStr;
 
   loadWeekData();
+  loadCrawlStatus();
+  window.setInterval(() => {
+    loadWeekData({ silent: true });
+    loadCrawlStatus();
+  }, 60 * 1000);
 
   // always use table/list view
   let currentArticles = [];
@@ -59,7 +66,7 @@ document.addEventListener('DOMContentLoaded', () => {
         showToast(`爬網完成：新增 ${data.stats.newCount} 篇，跳過 ${data.stats.skippedCount} 篇`);
         loadWeekData();
       } else {
-        showToast('爬網失敗：' + (data.error || '未知錯誤'));
+        showToast('爬網失敗：' + (data.error || data.stats?.error || '未知錯誤'));
       }
     } catch (err) {
       showToast('請求失敗：' + err.message);
@@ -98,8 +105,12 @@ document.addEventListener('DOMContentLoaded', () => {
     btnToday.disabled = lockForward;
   }
 
-  async function loadWeekData() {
-    weekContainer.innerHTML = '<div class="empty-state glass"><div class="spinner small"></div><p>正在讀取新聞資料...</p></div>';
+  async function loadWeekData({ silent = false } = {}) {
+    if (loadInProgress) return;
+    loadInProgress = true;
+    if (!silent) {
+      weekContainer.innerHTML = '<div class="empty-state glass"><div class="spinner small"></div><p>正在讀取新聞資料...</p></div>';
+    }
 
     const start = rangeStart && rangeStart.value ? rangeStart.value : todayStr;
     const end = rangeEnd && rangeEnd.value ? rangeEnd.value : todayStr;
@@ -119,8 +130,31 @@ document.addEventListener('DOMContentLoaded', () => {
       renderTableView(currentArticles);
     } catch (err) {
       console.error('Error loading data:', err);
-      showToast('載入失敗：' + (err.message || '請檢查伺服器連線後再試一次。'));
-      weekContainer.innerHTML = `<div class="empty-state glass"><h3>載入失敗</h3><p>${err.message ? escapeHtml(err.message) : '請檢查伺服器連線後再試一次。'}</p></div>`;
+      if (!silent) {
+        showToast('載入失敗：' + (err.message || '請檢查伺服器連線後再試一次。'));
+        weekContainer.innerHTML = `<div class="empty-state glass"><h3>載入失敗</h3><p>${err.message ? escapeHtml(err.message) : '請檢查伺服器連線後再試一次。'}</p></div>`;
+      }
+    } finally {
+      loadInProgress = false;
+    }
+  }
+
+  async function loadCrawlStatus() {
+    if (!syncStatus) return;
+    try {
+      const res = await fetch('/api/crawl-runs?limit=1');
+      const payload = await res.json();
+      const run = payload.runs && payload.runs[0];
+      if (!res.ok || !run) throw new Error(payload.error || '尚無執行紀錄');
+      const timestamp = run.finished_at || run.started_at;
+      const localTime = timestamp ? new Date(`${timestamp.replace(' ', 'T')}Z`).toLocaleString('zh-TW') : '未知';
+      syncStatus.textContent = run.status === 'success'
+        ? `最近更新：${localTime}・發現 ${run.discovered_count} 篇／新增 ${run.new_count} 篇`
+        : `最近更新失敗：${localTime}`;
+      syncStatus.dataset.state = run.status;
+    } catch (_) {
+      syncStatus.textContent = '尚無可用的爬蟲執行狀態';
+      syncStatus.dataset.state = 'unknown';
     }
   }
 

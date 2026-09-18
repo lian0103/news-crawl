@@ -1,8 +1,10 @@
 const axios = require('axios');
+const { isValidDateOnly } = require('./quality');
 
 const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
 let puppeteer = null;
+let browserPromise = null;
 
 async function getPuppeteer() {
   if (!puppeteer) {
@@ -46,14 +48,24 @@ async function fetchHtml(url, forcePuppeteer = false) {
 }
 
 async function fetchHtmlWithPuppeteer(url) {
-  let browser = null;
+  let page = null;
   try {
     const p = await getPuppeteer();
-    browser = await p.launch({
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
-    });
-    const page = await browser.newPage();
+    if (!browserPromise) {
+      browserPromise = p.launch({
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox']
+      });
+    }
+    let browser = await browserPromise;
+    if (!browser.connected) {
+      browserPromise = p.launch({
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox']
+      });
+      browser = await browserPromise;
+    }
+    page = await browser.newPage();
     await page.setUserAgent(USER_AGENT);
     await page.setViewport({ width: 1280, height: 800 });
     
@@ -62,16 +74,15 @@ async function fetchHtmlWithPuppeteer(url) {
       'Accept-Language': 'zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7'
     });
 
-    await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
+    // News pages commonly keep analytics connections open indefinitely.
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
     const html = await page.content();
     return html;
   } catch (err) {
     console.error(`Puppeteer failed for ${url}:`, err.message);
     throw err;
   } finally {
-    if (browser) {
-      await browser.close();
-    }
+    if (page) await page.close().catch(() => {});
   }
 }
 
@@ -87,10 +98,50 @@ function cleanText(text) {
     .trim();
 }
 
+function extractArticleBody(html, selectors = ['article p']) {
+  if (!html) return '';
+  const cheerio = require('cheerio');
+  const { dedupeParagraphs } = require('./quality');
+  const $ = cheerio.load(html);
+
+  for (const el of $('script[type="application/ld+json"]').toArray()) {
+    try {
+      const parsed = JSON.parse($(el).text());
+      const nodes = Array.isArray(parsed) ? parsed : [parsed];
+      for (const node of nodes) {
+        const graph = node && Array.isArray(node['@graph']) ? node['@graph'] : [node];
+        for (const item of graph) {
+          const body = item && item.articleBody;
+          if (typeof body === 'string' && body.trim().length >= 200) {
+            return dedupeParagraphs(body).slice(0, 50000);
+          }
+        }
+      }
+    } catch (_) {
+      // Fall through to publisher-specific selectors.
+    }
+  }
+
+  for (const selector of selectors) {
+    const paragraphs = [];
+    $(selector).each((_, p) => {
+      const text = cleanText($(p).text());
+      if (text && !/^(廣告|贊助內容|延伸閱讀|更多新聞|相關新聞)$/.test(text)) {
+        paragraphs.push(text);
+      }
+    });
+    const body = dedupeParagraphs(paragraphs.join('\n'));
+    if (body.length >= 200) return body.slice(0, 50000);
+  }
+
+  return '';
+}
+
 module.exports = {
   fetchHtml,
   sleep,
-  cleanText
+  cleanText,
+  extractArticleBody,
 };
 
 // Concurrency helper: run iterator over items with a fixed number of concurrent workers
@@ -121,25 +172,26 @@ function normalizeDateParts(y, m, d) {
   return `${y}-${m}-${d}`;
 }
 
+function validNormalizedDate(y, m, d) {
+  const normalized = normalizeDateParts(y, m, d);
+  return isValidDateOnly(normalized) ? normalized : null;
+}
+
 function tryParseDateString(s) {
   if (!s || typeof s !== 'string') return null;
   s = s.trim();
 
   // ISO datetime
-  const iso = s.match(/(\d{4}-\d{2}-\d{2})/);
-  if (iso) return iso[1];
+  const iso = s.match(/(?:^|\D)(\d{4})-(\d{2})-(\d{2})(?:\D|$)/);
+  if (iso) return validNormalizedDate(iso[1], iso[2], iso[3]);
 
   // YYYY/MM/DD or YYYY.MM.DD
   let m = s.match(/(\d{4})[\/\.](\d{1,2})[\/\.](\d{1,2})/);
-  if (m) return normalizeDateParts(m[1], m[2], m[3]);
+  if (m) return validNormalizedDate(m[1], m[2], m[3]);
 
   // Chinese format: YYYY年MM月DD日
   m = s.match(/(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})日/);
-  if (m) return normalizeDateParts(m[1], m[2], m[3]);
-
-  // Short formats like 2023/7/5
-  m = s.match(/(\d{4}).?(\d{1,2}).?(\d{1,2})/);
-  if (m) return normalizeDateParts(m[1], m[2], m[3]);
+  if (m) return validNormalizedDate(m[1], m[2], m[3]);
 
   return null;
 }
@@ -166,6 +218,23 @@ async function extractPublishDateFromHtml(html, url) {
     const m = $(sel).attr('content') || $(sel).attr('value');
     const d = tryParseDateString(m);
     if (d) return d;
+  }
+
+  // Structured data is generally more reliable than visible page chrome.
+  for (const el of $('script[type="application/ld+json"]').toArray()) {
+    try {
+      const parsed = JSON.parse($(el).text());
+      const nodes = Array.isArray(parsed) ? parsed : [parsed];
+      for (const node of nodes) {
+        const graph = node && Array.isArray(node['@graph']) ? node['@graph'] : [node];
+        for (const item of graph) {
+          const d = tryParseDateString(item && (item.datePublished || item.dateCreated));
+          if (d) return d;
+        }
+      }
+    } catch (_) {
+      // Ignore malformed publisher JSON-LD and continue with other signals.
+    }
   }
 
   // time tags with datetime
@@ -204,6 +273,7 @@ module.exports = {
   fetchHtml,
   sleep,
   cleanText,
+  extractArticleBody,
   mapConcurrent,
   extractPublishDateFromHtml,
   tryParseDateString

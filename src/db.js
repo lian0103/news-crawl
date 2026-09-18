@@ -35,11 +35,62 @@ function initDatabase() {
           summary TEXT,
           sentiment TEXT,
           keywords TEXT,
+          story_key TEXT,
+          relevance_score INTEGER DEFAULT 0,
+          last_seen_at TEXT DEFAULT CURRENT_TIMESTAMP,
           crawled_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
       `, (err) => {
         if (err) return reject(err);
       });
+
+      // Lightweight migrations for databases created by earlier versions.
+      db.run('ALTER TABLE articles ADD COLUMN story_key TEXT', (err) => {
+        if (err && !/duplicate column name/i.test(err.message)) reject(err);
+      });
+      db.run('ALTER TABLE articles ADD COLUMN relevance_score INTEGER DEFAULT 0', (err) => {
+        if (err && !/duplicate column name/i.test(err.message)) reject(err);
+      });
+      db.run('ALTER TABLE articles ADD COLUMN last_seen_at TEXT', (err) => {
+        if (err && !/duplicate column name/i.test(err.message)) reject(err);
+      });
+
+      db.run(`
+        CREATE TABLE IF NOT EXISTS crawl_runs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          finished_at TEXT,
+          status TEXT NOT NULL DEFAULT 'running',
+          keywords TEXT,
+          discovered_count INTEGER DEFAULT 0,
+          new_count INTEGER DEFAULT 0,
+          skipped_count INTEGER DEFAULT 0,
+          error_text TEXT
+        )
+      `, (err) => {
+        if (err) return reject(err);
+      });
+
+      db.run(`
+        CREATE TABLE IF NOT EXISTS crawl_source_runs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          crawl_run_id INTEGER NOT NULL,
+          keyword TEXT NOT NULL,
+          source TEXT NOT NULL,
+          status TEXT NOT NULL,
+          article_count INTEGER DEFAULT 0,
+          error_text TEXT,
+          finished_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY(crawl_run_id) REFERENCES crawl_runs(id)
+        )
+      `, (err) => {
+        if (err) return reject(err);
+      });
+
+      db.run('CREATE INDEX IF NOT EXISTS idx_articles_publish_date ON articles(publish_date)');
+      db.run('CREATE INDEX IF NOT EXISTS idx_articles_story_key ON articles(story_key)');
+      db.run('CREATE INDEX IF NOT EXISTS idx_articles_last_seen ON articles(last_seen_at)');
+      db.run('CREATE INDEX IF NOT EXISTS idx_crawl_source_run ON crawl_source_runs(crawl_run_id)');
 
       // Daily summaries table
       db.run(`
@@ -75,15 +126,18 @@ const dbOps = {
   saveArticle(article) {
     return new Promise((resolve, reject) => {
       const query = `
-        INSERT INTO articles (title, source, url, publish_date, content, summary, sentiment, keywords)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO articles (title, source, url, publish_date, content, summary, sentiment, keywords, story_key, relevance_score, last_seen_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         ON CONFLICT(url) DO UPDATE SET
           title = excluded.title,
           publish_date = excluded.publish_date,
           content = COALESCE(excluded.content, content),
           summary = COALESCE(excluded.summary, summary),
           sentiment = COALESCE(excluded.sentiment, sentiment),
-          keywords = COALESCE(excluded.keywords, keywords)
+          keywords = COALESCE(excluded.keywords, keywords),
+          story_key = COALESCE(excluded.story_key, story_key),
+          relevance_score = excluded.relevance_score,
+          last_seen_at = CURRENT_TIMESTAMP
       `;
       db.run(
         query,
@@ -95,8 +149,63 @@ const dbOps = {
           article.content || '',
           article.summary || '',
           article.sentiment || 'Neutral',
-          article.keywords || ''
+          article.keywords || '',
+          article.story_key || '',
+          Number.isFinite(article.relevance_score) ? article.relevance_score : 0
         ],
+        function(err) {
+          if (err) return reject(err);
+          resolve(this.lastID);
+        }
+      );
+    });
+  },
+
+  touchArticle(id) {
+    return new Promise((resolve, reject) => {
+      db.run('UPDATE articles SET last_seen_at = CURRENT_TIMESTAMP WHERE id = ?', [id], function(err) {
+        if (err) return reject(err);
+        resolve(this.changes);
+      });
+    });
+  },
+
+  startCrawlRun(keywords) {
+    return new Promise((resolve, reject) => {
+      db.run(
+        'INSERT INTO crawl_runs (keywords) VALUES (?)',
+        [JSON.stringify(keywords || [])],
+        function(err) {
+          if (err) return reject(err);
+          resolve(this.lastID);
+        }
+      );
+    });
+  },
+
+  finishCrawlRun(id, stats) {
+    return new Promise((resolve, reject) => {
+      db.run(
+        `UPDATE crawl_runs SET finished_at = CURRENT_TIMESTAMP, status = ?,
+          discovered_count = ?, new_count = ?, skipped_count = ?, error_text = ? WHERE id = ?`,
+        [stats.status, stats.discoveredCount || 0, stats.newCount || 0,
+          stats.skippedCount || 0, stats.error || null, id],
+        function(err) {
+          if (err) return reject(err);
+          resolve(this.changes);
+        }
+      );
+    });
+  },
+
+  saveCrawlSourceRun(crawlRunId, keyword, sourceStats) {
+    return new Promise((resolve, reject) => {
+      db.run(
+        `INSERT INTO crawl_source_runs
+          (crawl_run_id, keyword, source, status, article_count, error_text)
+          VALUES (?, ?, ?, ?, ?, ?)`,
+        [crawlRunId, keyword, sourceStats.source, sourceStats.status,
+          sourceStats.count || 0, sourceStats.error || null],
         function(err) {
           if (err) return reject(err);
           resolve(this.lastID);
@@ -225,6 +334,32 @@ const dbOps = {
         });
         resolve(rows);
       });
+    });
+  },
+
+  getRecentCrawlRuns(limit = 20) {
+    return new Promise((resolve, reject) => {
+      db.all(
+        'SELECT * FROM crawl_runs ORDER BY id DESC LIMIT ?',
+        [Math.max(1, Math.min(Number(limit) || 20, 100))],
+        (err, rows) => {
+          if (err) return reject(err);
+          resolve(rows);
+        }
+      );
+    });
+  },
+
+  getCrawlSourceRuns(crawlRunId) {
+    return new Promise((resolve, reject) => {
+      db.all(
+        'SELECT * FROM crawl_source_runs WHERE crawl_run_id = ? ORDER BY id',
+        [crawlRunId],
+        (err, rows) => {
+          if (err) return reject(err);
+          resolve(rows);
+        }
+      );
     });
   },
 

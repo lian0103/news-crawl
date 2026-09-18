@@ -1,5 +1,6 @@
 const cheerio = require('cheerio');
-const { fetchHtml, cleanText, sleep, extractPublishDateFromHtml } = require('./utils');
+const { fetchHtml, cleanText, sleep, extractPublishDateFromHtml, extractArticleBody } = require('./utils');
+const { canonicalizeUrl, dedupeParagraphs, isRelevantCandidate, isWithinRecentDays } = require('./quality');
 
 /**
  * Scrape articles from LTN search results.
@@ -12,6 +13,7 @@ async function scrapeLTN(keyword, options = {}) {
   const searchUrl = `https://search.ltn.com.tw/list?keyword=${encodedKeyword}`;
   
   const articles = [];
+  let filtered = [];
   try {
     const html = await fetchHtml(searchUrl);
     const $ = cheerio.load(html);
@@ -32,7 +34,7 @@ async function scrapeLTN(keyword, options = {}) {
       }
 
       if (url && title) {
-        const cleanUrl = url.split('?')[0];
+        const cleanUrl = canonicalizeUrl(url);
         articles.push({
           title,
           source: '自由時報',
@@ -47,13 +49,8 @@ async function scrapeLTN(keyword, options = {}) {
     // Apply options: limit count and recentDays filter
     const max = options.maxArticles || 8;
     const recentDays = typeof options.recentDays === 'number' ? options.recentDays : 3;
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - recentDays);
-
-    let filtered = articles.filter(a => {
-      if (!a.publish_date) return true;
-      const pd = new Date(a.publish_date);
-      return pd >= cutoff;
+    filtered = articles.filter(a => {
+      return isRelevantCandidate(a.title, keyword) && isWithinRecentDays(a.publish_date, recentDays);
     });
     filtered = filtered.slice(0, max);
 
@@ -66,16 +63,9 @@ async function scrapeLTN(keyword, options = {}) {
         const artHtml = await fetchHtml(art.url);
         const $art = cheerio.load(artHtml);
         
-        let contentText = '';
-        $art('div.text p, .articlebody p, .text p').each((_, p) => {
-          // Avoid text that is inside sub-elements or scripts/advertisements if any
-          const text = $art(p).text().trim();
-          if (text && !$art(p).hasClass('appE112') && !$art(p).find('script').length) {
-            contentText += text + '\n';
-          }
-        });
-
-        art.content = contentText.trim();
+        art.content = extractArticleBody(artHtml, [
+          'div.text p', '.articlebody p', '.whitecon.articlebody p', 'article p',
+        ]);
         try {
           const found = await extractPublishDateFromHtml(artHtml, art.url);
           if (found) art.publish_date = found;
@@ -91,9 +81,10 @@ async function scrapeLTN(keyword, options = {}) {
 
   } catch (err) {
     console.error('[LTN] Scrape failed:', err.message);
+    throw err;
   }
 
-  return (filtered || []).filter(a => a.content);
+  return (filtered || []).filter(a => a.content && isWithinRecentDays(a.publish_date, options.recentDays ?? 3));
 }
 
 module.exports = scrapeLTN;

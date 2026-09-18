@@ -1,5 +1,6 @@
 const cheerio = require('cheerio');
-const { fetchHtml, cleanText, sleep } = require('./utils');
+const { fetchHtml, cleanText, sleep, extractArticleBody } = require('./utils');
+const { canonicalizeUrl, dedupeParagraphs, isRelevantCandidate, isWithinRecentDays } = require('./quality');
 
 const YAHOO_NEWS_HOST = 'https://tw.news.yahoo.com';
 
@@ -53,9 +54,9 @@ async function scrapeYahoo(keyword, options = {}) {
       if (!isYahooArticleUrl(absoluteUrl)) return;
       if (!title || title.length < 8) return;
 
-      const cleanUrl = absoluteUrl.split('?')[0];
+      const cleanUrl = canonicalizeUrl(absoluteUrl);
 
-      if (!articleMap.has(cleanUrl)) {
+      if (!articleMap.has(cleanUrl) && isRelevantCandidate(title, keyword)) {
         articleMap.set(cleanUrl, {
           title,
           source: 'Yahoo新聞',
@@ -70,13 +71,8 @@ async function scrapeYahoo(keyword, options = {}) {
     // Apply options: limit count and recentDays filter
     const max = options.maxArticles || 8;
     const recentDays = typeof options.recentDays === 'number' ? options.recentDays : 3;
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - recentDays);
-
     let filtered = allArticles.filter(a => {
-      if (!a.publish_date) return true;
-      const pd = new Date(a.publish_date);
-      return pd >= cutoff;
+      return isWithinRecentDays(a.publish_date, recentDays);
     });
     const articles = filtered.slice(0, max);
     console.log(`[Yahoo] Found ${articles.length} search results (after filtering)`);
@@ -111,17 +107,11 @@ async function scrapeYahoo(keyword, options = {}) {
           cleanText($art('.caas-attr-provider').first().text()) ||
           'Yahoo新聞';
 
-        let contentText = '';
-        $art('div.caas-body p, #caas-art-content p, article p, .article-body p, main p').each((_, p) => {
-          const text = cleanText($art(p).text());
-          if (text && !/廣告|Sponsored|立即下載|延伸閱讀/.test(text)) {
-            contentText += `${text}\n`;
-          }
-        });
-
         art.publish_date = publishDate;
         art.source = publisherText;
-        art.content = contentText.trim();
+        art.content = extractArticleBody(artHtml, [
+          '#caas-art-content p', 'div.caas-body > p', 'article p',
+        ]);
 
         if (options.delayMs) await sleep(options.delayMs);
       } catch (err) {
@@ -130,10 +120,10 @@ async function scrapeYahoo(keyword, options = {}) {
       }
     });
 
-    return articles.filter((a) => a.content);
+    return articles.filter((a) => a.content && isWithinRecentDays(a.publish_date, recentDays));
   } catch (err) {
     console.error('[Yahoo] Scrape failed:', err.message);
-    return [];
+    throw err;
   }
 }
 

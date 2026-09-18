@@ -47,6 +47,25 @@ app.get('/api/recent-summaries', async (req, res) => {
   }
 });
 
+// API: Inspect recent crawler health and discovery counts
+app.get('/api/crawl-runs', async (req, res) => {
+  try {
+    const runs = await dbOps.getRecentCrawlRuns(req.query.limit || 20);
+    res.json({ success: true, count: runs.length, runs });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/crawl-runs/:id/sources', async (req, res) => {
+  try {
+    const sources = await dbOps.getCrawlSourceRuns(Number(req.params.id));
+    res.json({ success: true, count: sources.length, sources });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // API: Get articles in a date range (inclusive)
 app.get('/api/news-range', async (req, res) => {
   const start = req.query.start;
@@ -69,7 +88,7 @@ app.post('/api/crawl', async (req, res) => {
   console.log('[Server] Manual crawl triggered via API');
   try {
     const stats = await runCrawler();
-    res.json({ success: true, stats });
+    res.status(stats.success ? 200 : (stats.busy ? 409 : 500)).json({ success: stats.success, stats });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

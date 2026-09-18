@@ -1,6 +1,7 @@
 const cheerio = require('cheerio');
 const axios = require('axios');
-const { fetchHtml, cleanText, sleep, extractPublishDateFromHtml } = require('./utils');
+const { fetchHtml, cleanText, sleep, extractPublishDateFromHtml, extractArticleBody } = require('./utils');
+const { canonicalizeUrl, dedupeParagraphs, isRelevantCandidate, isWithinRecentDays } = require('./quality');
 
 /**
  * Scrape articles from UDN search results.
@@ -14,6 +15,7 @@ async function scrapeUDN(keyword, options = {}) {
   const searchUrl = `https://udn.com/api/more?page=1&id=search:${encodedKeyword}&channelId=2&type=searchword`;
   
   const articles = [];
+  let filtered = [];
   try {
     const res = await axios.get(searchUrl, {
       headers: {
@@ -44,7 +46,7 @@ async function scrapeUDN(keyword, options = {}) {
       if (!url || !title) continue;
 
       // Clean the URL (remove query params)
-      const cleanUrl = url.split('?')[0];
+      const cleanUrl = canonicalizeUrl(url);
 
       articles.push({
         title,
@@ -57,13 +59,8 @@ async function scrapeUDN(keyword, options = {}) {
     // Apply options: limit count and recentDays filter
     const max = options.maxArticles || 8;
     const recentDays = typeof options.recentDays === 'number' ? options.recentDays : 3;
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - recentDays);
-
-    let filtered = articles.filter(a => {
-      if (!a.publish_date) return true;
-      const pd = new Date(a.publish_date);
-      return pd >= cutoff;
+    filtered = articles.filter(a => {
+      return isRelevantCandidate(a.title, keyword) && isWithinRecentDays(a.publish_date, recentDays);
     });
     filtered = filtered.slice(0, max);
 
@@ -76,26 +73,10 @@ async function scrapeUDN(keyword, options = {}) {
         const html = await fetchHtml(art.url);
         const $ = cheerio.load(html);
 
-        // Match content paragraphs
-        let contentText = '';
-        $('section.article-content__editor p, .article-content__editor p, .story p, #article_body p').each((_, p) => {
-          const text = $(p).text().trim();
-          if (text) {
-            contentText += text + '\n';
-          }
-        });
-
-        // Fallback content if empty
-        if (!contentText) {
-          $('article p').each((_, p) => {
-            const text = $(p).text().trim();
-            if (text) {
-              contentText += text + '\n';
-            }
-          });
-        }
-
-        art.content = contentText.trim();
+        art.content = extractArticleBody(html, [
+          'section.article-content__editor p', '.article-content__editor p',
+          '#article_body p', '.story p', 'article p',
+        ]);
         try {
           const found = await extractPublishDateFromHtml(html, art.url);
           if (found) art.publish_date = found;
@@ -111,9 +92,10 @@ async function scrapeUDN(keyword, options = {}) {
 
   } catch (err) {
     console.error('[UDN] Scrape failed:', err.message);
+    throw err;
   }
 
-  return (filtered || []).filter(a => a.content);
+  return (filtered || []).filter(a => a.content && isWithinRecentDays(a.publish_date, options.recentDays ?? 3));
 }
 
 module.exports = scrapeUDN;

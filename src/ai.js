@@ -140,10 +140,16 @@ async function generateDailySummary(date, articles) {
 // Fallback rule-based implementations
 function ruleBasedSummarize(title, content) {
   const summary = buildExtractiveSummary(title, content);
+  const headline = title || '';
+  const positiveHits = (headline.match(/力挺|領先|支持|肯定|讚|成功|提升|看好|承諾/g) || []).length;
+  const negativeHits = (headline.match(/批|轟|嗆|爭議|抹黑|涉賄|崩壞|下滑|落後|質疑|指控|道歉/g) || []).length;
+  let sentiment = 'Neutral';
+  if (positiveHits > negativeHits) sentiment = 'Positive';
+  if (negativeHits > positiveHits) sentiment = 'Negative';
 
   return {
     summary: summary || '（無法解析內容）',
-    sentiment: 'Neutral',
+    sentiment,
     keywords: extractKeywords(title, content)
   };
 }
